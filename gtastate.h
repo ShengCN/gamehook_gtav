@@ -14,16 +14,13 @@ void releaseGTA5State(HMODULE hInstance);
 
 
 struct GameInfo {
-	int time_since_player_hit_vehicle;
-	int time_since_player_hit_ped;
-	int time_since_player_drove_on_pavement;
-	int time_since_player_drove_against_traffic;
-	int dead;
 	Vec3f position, forward_vector;
-	float heading;
-	int on_foot, in_vehicle, on_bike, money;
+	Vec3f cam_pos, cam_ori;
+	float fov;
+	float near_plane;
+	float far_plane;
 };
-TOJSON(GameInfo, time_since_player_hit_vehicle, time_since_player_hit_ped, time_since_player_drove_on_pavement, time_since_player_drove_against_traffic, dead, position, forward_vector, heading, on_foot, in_vehicle, on_bike, money)
+TOJSON(GameInfo, position, forward_vector, cam_pos, cam_ori, fov, near_plane, far_plane)
 
 // N_OBJECTS Maximum number of frames, needs to be a power of 2
 #define N_OBJECTS (1<<13)
@@ -64,6 +61,7 @@ public:
 	Object * operator()(const Vec3f & v, const Quaternion & q, float D, float QD, ObjectType t);
 	const Object * operator()(const Vec3f & v, const Quaternion & q) const;
 };
+
 
 TrackedFrame * trackNextFrame();
 bool stopTracker();

@@ -12,7 +12,8 @@ cbuffer disparity_correction {
 	float disp_b = 0.0; // Correct the disparity disp_a * (z + disp_b)
 };
 
-void main(in float4 p: SV_POSITION, in float2 t : TEX_COORD, out float2 flow : SV_Target0, out float disparity : SV_Target1, out float occlusion: SV_Target2){
+void main(in float4 p: SV_POSITION, in float2 t : TEX_COORD, out float2 flow : SV_Target0, out float disparity : SV_Target1, out float occlusion: SV_Target2)
+{
 	//float4 f = T.Sample(S, t);
 	uint W, H;
 	flow_disp.GetDimensions(W, H);

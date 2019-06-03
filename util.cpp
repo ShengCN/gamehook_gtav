@@ -64,6 +64,7 @@ bool hasSBuffer(std::shared_ptr<Shader> s, const std::string & name) {
 	return has(s->sbuffers(), name);
 }
 
+// #compare_texture_with_name
 bool hasTexture(std::shared_ptr<Shader> s, const std::string & name) {
 	return has(s->textures(), name);
 }

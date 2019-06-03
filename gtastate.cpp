@@ -8,6 +8,7 @@
 #include <ostream>
 #include <mutex>
 #include <Windows.h>
+#include <fstream>
 
 const float TRACKING_RAD = 0.5f;
 const float TRACKING_QUAT = 0.1f;
@@ -88,6 +89,8 @@ TrackedFrame::TrackedFrame() :object_map(TRACKING_RAD) {}
 uint32_t ID(uint32_t id, TrackedFrame::ObjectType t) {
 	return ((uint32_t)t) << 28 | id;
 }
+
+// #json_track_fetch
 void TrackedFrame::fetch() {
 	static std::mutex fetching;
 	std::lock_guard<std::mutex> lock(fetching);
@@ -129,22 +132,44 @@ void TrackedFrame::fetch() {
 	}
 	Player p = PLAYER::PLAYER_ID();
 	Ped pp = PLAYER::PLAYER_PED_ID();
-	info.time_since_player_drove_against_traffic = PLAYER::GET_TIME_SINCE_PLAYER_DROVE_AGAINST_TRAFFIC(p);
-	info.time_since_player_drove_on_pavement = PLAYER::GET_TIME_SINCE_PLAYER_DROVE_ON_PAVEMENT(p);
-	info.time_since_player_hit_ped = PLAYER::GET_TIME_SINCE_PLAYER_HIT_PED(p);
-	info.time_since_player_hit_vehicle = PLAYER::GET_TIME_SINCE_PLAYER_HIT_VEHICLE(p);
-	info.dead = PLAYER::IS_PLAYER_DEAD(p);
+
 	Vector3 x = ENTITY::GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS(pp, 0.0, 0.0, 0.0);
 	info.position = { x.x, x.y, x.z };
 	x = ENTITY::GET_ENTITY_FORWARD_VECTOR(pp);
 	info.forward_vector = { x.x, x.y, x.z };
-	info.heading = ENTITY::GET_ENTITY_HEADING(pp);
-	info.on_foot = PED::IS_PED_ON_FOOT(pp);
-	info.in_vehicle = 2*PED::IS_PED_GETTING_INTO_A_VEHICLE(pp) + PED::IS_PED_IN_ANY_VEHICLE(pp, true);
-	info.on_bike= PED::IS_PED_ON_ANY_BIKE(pp);
 
-	// Let's assume we play with Franklyn all the time
-	STATS::STAT_GET_INT(GAMEPLAY::GET_HASH_KEY("SP1_TOTAL_CASH"), &info.money, -1);
+	Vector3 position;
+	Vector3 orientation;
+	float fov;
+	float near_plane;
+	float far_plane;
+
+	// #get_cam_param
+	if (CAM::IS_GAMEPLAY_CAM_RENDERING())
+	{
+		position = CAM::GET_GAMEPLAY_CAM_COORD();
+		orientation = CAM::GET_GAMEPLAY_CAM_ROT(2);
+		fov = CAM::GET_GAMEPLAY_CAM_FOV();
+		near_plane = invoke<float>(0xD0082607100D7193);
+		far_plane = invoke<float>(0xDFC8CBC606FDB0FC);
+	}
+	else
+	{
+		Any cur_camera = CAM::GET_RENDERING_CAM();
+		// camera parameters
+		position = CAM::GET_CAM_COORD(cur_camera);
+		orientation = CAM::GET_CAM_ROT(cur_camera, 2);
+		fov = CAM::GET_CAM_FOV(cur_camera);
+		near_plane = CAM::GET_CAM_NEAR_CLIP(cur_camera);
+		far_plane = CAM::GET_CAM_FAR_CLIP(cur_camera);
+	}
+
+
+	info.cam_pos = { position.x, position.y, position.z };
+	info.cam_ori = { orientation.x, orientation.y, orientation.z };
+	info.fov = fov;
+	info.near_plane = near_plane;
+	info.far_plane = far_plane;
 }
 
 //TrackedFrame::Object * TrackedFrame::operator[](uint32_t id) {

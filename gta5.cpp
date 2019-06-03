@@ -65,7 +65,7 @@ struct GTA5 : public GameController {
 	}
 	virtual std::vector<ProvidedTarget> providedCustomTargets() const {
 		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
-		return { {"flow_disp", TargetType::R32G32B32A32_FLOAT, true}, { "flow", TargetType::R32G32_FLOAT}, { "disparity", TargetType::R32_FLOAT },{ "occlusion", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };
+		return { { "disparity", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };
 	}
 	CBufferVariable rage_matrices = { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} }, wheel_matrices = { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, rage_bonemtx = { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
 	enum ObjectType {
@@ -79,11 +79,25 @@ struct GTA5 : public GameController {
 	};
 	std::unordered_map<ShaderHash, ObjectType> object_type;
 	std::unordered_set<ShaderHash> final_shader;
-	std::shared_ptr<Shader> vs_static_shader = Shader::create(ByteCode(VS_STATIC, VS_STATIC + sizeof(VS_STATIC))),
-		ps_output_shader = Shader::create(ByteCode(PS_OUTPUT, PS_OUTPUT + sizeof(PS_OUTPUT)), { { "SV_Target6", "flow_disp" }, { "SV_Target7", "object_id" } }),
-		flow_shader = Shader::create(ByteCode(PS_FLOW, PS_FLOW + sizeof(PS_FLOW)), { { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } }),
-		noflow_shader = Shader::create(ByteCode(PS_NOFLOW, PS_NOFLOW + sizeof(PS_NOFLOW)), { { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } });
-	std::unordered_set<ShaderHash> int_position = { ShaderHash("d05510b7:0d9c59d0:612cd23a:f75d5ebd"), ShaderHash("c59148c8:e2f1a5ad:649bb9c7:30454a34"), ShaderHash("8a028f64:80694472:4d55d5dd:14c329f2"), ShaderHash("53a6e156:ff48c806:433fc787:c150b034"), ShaderHash("86de7f78:3ecdef51:f1c6f9e3:c5e6338f"), ShaderHash("f37799c8:b304710d:3296b36c:46ea12d4"), ShaderHash("4b031811:b6bf1c7f:ef4cd0c1:56541537") };
+
+	// #create_injection_shaders
+	std::shared_ptr<Shader> vs_static_shader	= Shader::create(ByteCode(VS_STATIC,	VS_STATIC + sizeof(VS_STATIC))),
+							ps_output_shader	= Shader::create(ByteCode(PS_OUTPUT,	PS_OUTPUT + sizeof(PS_OUTPUT)),		{ { "SV_Target6", "flow_disp" }, { "SV_Target7", "object_id" } }),
+							flow_shader			= Shader::create(ByteCode(PS_FLOW,		PS_FLOW + sizeof(PS_FLOW)),			{ { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } }),
+							noflow_shader		= Shader::create(ByteCode(PS_NOFLOW,	PS_NOFLOW + sizeof(PS_NOFLOW)),		{ { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } });
+
+	std::unordered_set<ShaderHash> int_position = 
+	{ 
+		ShaderHash("d05510b7:0d9c59d0:612cd23a:f75d5ebd"), 
+		ShaderHash("c59148c8:e2f1a5ad:649bb9c7:30454a34"), 
+		ShaderHash("8a028f64:80694472:4d55d5dd:14c329f2"), 
+		ShaderHash("53a6e156:ff48c806:433fc787:c150b034"), 
+		ShaderHash("86de7f78:3ecdef51:f1c6f9e3:c5e6338f"), 
+		ShaderHash("f37799c8:b304710d:3296b36c:46ea12d4"), 
+		ShaderHash("4b031811:b6bf1c7f:ef4cd0c1:56541537") 
+	};
+
+	// #inject_shaders
 	virtual std::shared_ptr<Shader> injectShader(std::shared_ptr<Shader> shader) {
 		if (shader->type() == Shader::VERTEX) {
 			bool has_rage_matrices = rage_matrices.scan(shader);
@@ -124,20 +138,30 @@ struct GTA5 : public GameController {
 				}
 			}
 		}
+
+		// #find_final_shader
 		if (shader->type() == Shader::PIXEL) {
-			// prior to v1.0.1365.1
-			if (hasTexture(shader, "BackBufferTexture")) {
+			//// prior to v1.0.1365.1
+			//if (hasTexture(shader, "BackBufferTexture")) {
+			//	final_shader.insert(shader->hash());
+			//}
+			//// v1.0.1365.1 and newer
+			//if (hasTexture(shader, "SSLRSampler") && hasTexture(shader, "HDRSampler")) {
+			//	// Other candidate textures include "MotionBlurSampler", "BlurSampler", but might depend on graphics settings
+			//	final_shader.insert(shader->hash());
+			//}
+
+			if (shader->hash() == ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e"))
+			{
 				final_shader.insert(shader->hash());
 			}
-			// v1.0.1365.1 and newer
-			if (hasTexture(shader, "SSLRSampler") && hasTexture(shader, "HDRSampler")) {
-				// Other candidate textures include "MotionBlurSampler", "BlurSampler", but might depend on graphics settings
-				final_shader.insert(shader->hash());
-			}
+
 			if (hasCBuffer(shader, "misc_globals")) {
 				// Inject the shader output
+				// seems like it is for albedo
 				return ps_output_shader;
 			}
+
 		}
 		return nullptr;
 	}
@@ -176,6 +200,8 @@ struct GTA5 : public GameController {
 	float4x4 avg_world = 0, avg_world_view = 0, avg_world_view_proj = 0, prev_view = 0, prev_view_proj = 0;
 	uint8_t main_render_pass = 0;
 	uint32_t oid = 1, base_id = 1;
+
+	// #cbuffer
 	std::shared_ptr<CBuffer> id_buffer, prev_buffer, prev_wheel_buffer, prev_rage_bonemtx, disparity_correction;
 	TrackedFrame * tracker = nullptr;
 	std::shared_ptr<TrackData> last_vehicle;
@@ -183,12 +209,14 @@ struct GTA5 : public GameController {
 	uint32_t current_frame_id = 1, wheel_count = 0;
 
 	size_t TS = 0;
+	// #start_frame
 	virtual void startFrame(uint32_t frame_id) override {
 		start_time = time();
 
 		main_render_pass = 2;
 		albedo_output = RenderTargetView();
 
+		// cbuffer creation
 		if (!id_buffer) id_buffer = createCBuffer("IDBuffer", sizeof(int));
 		if (!prev_buffer) prev_buffer = createCBuffer("prev_rage_matrices", 4*sizeof(float4x4));
 		if (!prev_wheel_buffer) prev_wheel_buffer = createCBuffer("prev_matWheelBuffer", 4 * sizeof(float4x4));
@@ -204,6 +232,8 @@ struct GTA5 : public GameController {
 		avg_world_view_proj = 0;
 		TS = 0;
 	}
+
+	// #end_frame
 	virtual void endFrame(uint32_t frame_id) override {
 		if (currentRecordingType() != NONE) {
 			mul(&prev_view_proj, avg_world.affine_inv(), avg_world_view_proj);
@@ -216,6 +246,8 @@ struct GTA5 : public GameController {
 			LOG(INFO) << "T = " << time() - start_time << "   S = " << TS;
 		}
 	}
+
+	// #draw_function
 	RenderTargetView albedo_output;
 	virtual DrawType startDraw(const DrawInfo & info) override {
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2 && info.type == DrawInfo::INDEX && info.instances == 0) {
