@@ -79,6 +79,7 @@ struct GTA5 : public GameController {
 	};
 	std::unordered_map<ShaderHash, ObjectType> object_type;
 	std::unordered_set<ShaderHash> final_shader;
+	// std::unordered_set<ShaderHash> water_shader;
 
 	// #create_injection_shaders
 	std::shared_ptr<Shader> vs_static_shader	= Shader::create(ByteCode(VS_STATIC,	VS_STATIC + sizeof(VS_STATIC))),
@@ -141,27 +142,30 @@ struct GTA5 : public GameController {
 
 		// #find_final_shader
 		if (shader->type() == Shader::PIXEL) {
-			//// prior to v1.0.1365.1
-			//if (hasTexture(shader, "BackBufferTexture")) {
-			//	final_shader.insert(shader->hash());
-			//}
-			//// v1.0.1365.1 and newer
-			//if (hasTexture(shader, "SSLRSampler") && hasTexture(shader, "HDRSampler")) {
-			//	// Other candidate textures include "MotionBlurSampler", "BlurSampler", but might depend on graphics settings
-			//	final_shader.insert(shader->hash());
-			//}
-
-			if (shader->hash() == ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e"))
-			{
+			// #depth_disparity
+			// prior to v1.0.1365.1
+			if (hasTexture(shader, "BackBufferTexture")) {
+				final_shader.insert(shader->hash());
+			}
+			// v1.0.1365.1 and newer
+			if (hasTexture(shader, "SSLRSampler") && hasTexture(shader, "HDRSampler")) {
+				// Other candidate textures include "MotionBlurSampler", "BlurSampler", but might depend on graphics settings
 				final_shader.insert(shader->hash());
 			}
 
+			// #unknown_usage
 			if (hasCBuffer(shader, "misc_globals")) {
 				// Inject the shader output
-				// seems like it is for albedo
+				LOG(INFO) << "misc_globals " << shader->hash();
 				return ps_output_shader;
 			}
 
+			//// #water_segmentation
+			//if (shader->hash() == ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e"))
+			//{
+			//	LOG(INFO) << "Injected into water shaders. ";
+			//	water_shader.insert(shader->hash());
+			//}
 		}
 		return nullptr;
 	}
@@ -396,6 +400,12 @@ struct GTA5 : public GameController {
 			// Draw the final image (right before the image is distorted)
 			copyTarget("final", info.outputs[0]);
 		}
+
+		//// Draw the water segments
+		//if (final_shader.count(info.pixel_shader))
+		//{
+		//	copyTarget("water", info.outputs[0]);
+		//}
 	}
 	virtual std::string gameState() const override {
 		if (tracker)
