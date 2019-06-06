@@ -61,7 +61,7 @@ struct GTA5 : public GameController {
 		return false;
 	}
 	virtual std::vector<ProvidedTarget> providedTargets() const override {
-		return { {"albedo"}, {"final"}, { "prev_disp", TargetType::R32_FLOAT, true } };
+		return { {"albedo"}, {"final"},{"water"}, { "prev_disp", TargetType::R32_FLOAT, true } };
 	}
 	virtual std::vector<ProvidedTarget> providedCustomTargets() const {
 		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
@@ -79,6 +79,7 @@ struct GTA5 : public GameController {
 	};
 	std::unordered_map<ShaderHash, ObjectType> object_type;
 	std::unordered_set<ShaderHash> final_shader;
+	std::unordered_set<ShaderHash> water_shader;
 
 	// #create_injection_shaders
 	std::shared_ptr<Shader> vs_static_shader	= Shader::create(ByteCode(VS_STATIC,	VS_STATIC + sizeof(VS_STATIC))),
@@ -96,6 +97,8 @@ struct GTA5 : public GameController {
 		ShaderHash("f37799c8:b304710d:3296b36c:46ea12d4"), 
 		ShaderHash("4b031811:b6bf1c7f:ef4cd0c1:56541537") 
 	};
+
+	ShaderHash water_shader_hash = ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e");
 
 	// #inject_shaders
 	virtual std::shared_ptr<Shader> injectShader(std::shared_ptr<Shader> shader) {
@@ -141,19 +144,19 @@ struct GTA5 : public GameController {
 
 		// #find_final_shader
 		if (shader->type() == Shader::PIXEL) {
-			//// prior to v1.0.1365.1
-			//if (hasTexture(shader, "BackBufferTexture")) {
-			//	final_shader.insert(shader->hash());
-			//}
-			//// v1.0.1365.1 and newer
-			//if (hasTexture(shader, "SSLRSampler") && hasTexture(shader, "HDRSampler")) {
-			//	// Other candidate textures include "MotionBlurSampler", "BlurSampler", but might depend on graphics settings
-			//	final_shader.insert(shader->hash());
-			//}
-
-			if (shader->hash() == ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e"))
-			{
+			// prior to v1.0.1365.1
+			if (hasTexture(shader, "BackBufferTexture")) {
 				final_shader.insert(shader->hash());
+			}
+			// v1.0.1365.1 and newer
+			if (hasTexture(shader, "SSLRSampler") && hasTexture(shader, "HDRSampler")) {
+				// Other candidate textures include "MotionBlurSampler", "BlurSampler", but might depend on graphics settings
+				final_shader.insert(shader->hash());
+			}
+
+			if (shader->hash() == water_shader_hash)
+			{
+				water_shader.insert(shader->hash());
 			}
 
 			if (hasCBuffer(shader, "misc_globals")) {
@@ -199,6 +202,7 @@ struct GTA5 : public GameController {
 
 	float4x4 avg_world = 0, avg_world_view = 0, avg_world_view_proj = 0, prev_view = 0, prev_view_proj = 0;
 	uint8_t main_render_pass = 0;
+	uint8_t water_render_pass = 0;
 	uint32_t oid = 1, base_id = 1;
 
 	// #cbuffer
@@ -214,6 +218,7 @@ struct GTA5 : public GameController {
 		start_time = time();
 
 		main_render_pass = 2;
+		water_render_pass = 2;
 		albedo_output = RenderTargetView();
 
 		// cbuffer creation
@@ -249,6 +254,7 @@ struct GTA5 : public GameController {
 
 	// #draw_function
 	RenderTargetView albedo_output;
+	RenderTargetView water_output;
 	virtual DrawType startDraw(const DrawInfo & info) override {
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2 && info.type == DrawInfo::INDEX && info.instances == 0) {
 			bool has_rage_matrices = rage_matrices.has(info.vertex_shader);
@@ -389,6 +395,19 @@ struct GTA5 : public GameController {
 			copyTarget("albedo", albedo_output);
 			main_render_pass = 0;
 		}
+
+		if (info.pixel_shader == water_shader_hash)
+		{
+			water_output = info.outputs[0];
+			water_render_pass = 1;
+		}
+		else if (water_render_pass == 1)
+		{
+			copyTarget("water", water_output);
+			water_render_pass = 0;
+			LOG(INFO) <<"Info size: "<< info.outputs.size();
+		}
+
 		return DEFAULT;
 	}
 	virtual void endDraw(const DrawInfo & info) override {
@@ -396,6 +415,7 @@ struct GTA5 : public GameController {
 			// Draw the final image (right before the image is distorted)
 			copyTarget("final", info.outputs[0]);
 		}
+
 	}
 	virtual std::string gameState() const override {
 		if (tracker)
