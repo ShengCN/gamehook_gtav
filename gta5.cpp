@@ -18,6 +18,19 @@
 
 uint32_t MAX_UNTRACKED_OBJECT_ID = 1 << 14;
 
+enum KB_Keys
+{
+	Q = 0x51,
+	E = 0x45,
+	W = 0x57,
+	A = 0x41,
+	S = 0x53,
+	D = 0x44,
+	J = 0x4A,
+	L = 0x4C,
+	I = 0x49,
+	K = 0x4B
+};
 // For debugging, use the current matrices, not the past to estimate the flow
 //#define CURRENT_FLOW
 
@@ -67,7 +80,9 @@ struct GTA5 : public GameController {
 		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
 		return { { "disparity", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };
 	}
-	CBufferVariable rage_matrices = { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} }, wheel_matrices = { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, rage_bonemtx = { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
+	CBufferVariable rage_matrices = { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} }, 
+					wheel_matrices = { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, 
+					rage_bonemtx = { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
 	enum ObjectType {
 		UNKNOWN=0,
 		VEHICLE=1,
@@ -79,7 +94,7 @@ struct GTA5 : public GameController {
 	};
 	std::unordered_map<ShaderHash, ObjectType> object_type;
 	std::unordered_set<ShaderHash> final_shader;
-	// std::unordered_set<ShaderHash> water_shader;
+	std::unordered_set<ShaderHash> water_shader;
 
 	// #create_injection_shaders
 	std::shared_ptr<Shader> vs_static_shader	= Shader::create(ByteCode(VS_STATIC,	VS_STATIC + sizeof(VS_STATIC))),
@@ -97,6 +112,8 @@ struct GTA5 : public GameController {
 		ShaderHash("f37799c8:b304710d:3296b36c:46ea12d4"), 
 		ShaderHash("4b031811:b6bf1c7f:ef4cd0c1:56541537") 
 	};
+
+	ShaderHash water_shader_hash = ShaderHash("407b99b3-02153a8c-18fb239c-2d824b32");
 
 	// #inject_shaders
 	virtual std::shared_ptr<Shader> injectShader(std::shared_ptr<Shader> shader) {
@@ -142,30 +159,30 @@ struct GTA5 : public GameController {
 
 		// #find_final_shader
 		if (shader->type() == Shader::PIXEL) {
-			// #depth_disparity
-			// prior to v1.0.1365.1
-			if (hasTexture(shader, "BackBufferTexture")) {
-				final_shader.insert(shader->hash());
-			}
-			// v1.0.1365.1 and newer
-			if (hasTexture(shader, "SSLRSampler") && hasTexture(shader, "HDRSampler")) {
-				// Other candidate textures include "MotionBlurSampler", "BlurSampler", but might depend on graphics settings
-				final_shader.insert(shader->hash());
-			}
+			//// #depth_disparity
+			//// prior to v1.0.1365.1
+			//if (hasTexture(shader, "BackBufferTexture")) {
+			//	final_shader.insert(shader->hash());
+			//}
+			//// v1.0.1365.1 and newer
+			//if (hasTexture(shader, "SSLRSampler") && hasTexture(shader, "HDRSampler")) {
+			//	// Other candidate textures include "MotionBlurSampler", "BlurSampler", but might depend on graphics settings
+			//	final_shader.insert(shader->hash());
+			//}
 
 			// #unknown_usage
 			if (hasCBuffer(shader, "misc_globals")) {
 				// Inject the shader output
-				LOG(INFO) << "misc_globals " << shader->hash();
 				return ps_output_shader;
 			}
 
-			//// #water_segmentation
-			//if (shader->hash() == ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e"))
-			//{
-			//	LOG(INFO) << "Injected into water shaders. ";
-			//	water_shader.insert(shader->hash());
-			//}
+			// #water_segmentation
+			if (shader->hash() == water_shader_hash)
+			{
+				LOG(INFO) << "Injected into water shaders. ";
+				// water_shader.insert(shader->hash());
+				 final_shader.insert(shader->hash());
+			}
 		}
 		return nullptr;
 	}
@@ -251,10 +268,25 @@ struct GTA5 : public GameController {
 		}
 	}
 
+	// #condition_check
+	bool is_info_vertice(const DrawInfo & info)
+	{
+		return 	(currentRecordingType() != NONE) &&
+			info.outputs.size() &&
+			info.outputs[0].W == defaultWidth() &&
+			info.outputs[0].H == defaultHeight() &&
+			info.outputs.size() >= 2 &&
+			info.type == DrawInfo::INDEX &&
+			info.instances == 0;
+	}
+
 	// #draw_function
 	RenderTargetView albedo_output;
+	RenderTargetView water_output;
 	virtual DrawType startDraw(const DrawInfo & info) override {
-		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2 && info.type == DrawInfo::INDEX && info.instances == 0) {
+		bool is_vertice = is_info_vertice(info);
+		
+		if (is_vertice) {
 			bool has_rage_matrices = rage_matrices.has(info.vertex_shader);
 			ObjectType type = UNKNOWN;
 			{
@@ -270,6 +302,7 @@ struct GTA5 : public GameController {
 					main_render_pass = 1;
 				}
 				if (main_render_pass == 1) {
+#pragma region camera_matrix
 					uint32_t id = 0;
 					if (wp && wp->size() >= 3 * sizeof(float4x4)) {
 						// Fetch the rage matrices gWorld, gWorldView, gWorldViewProj
@@ -386,6 +419,7 @@ struct GTA5 : public GameController {
 						bindCBuffer(id_buffer);
 						return RIGID;
 					}
+#pragma endregion camera_matrix
 				}
 			}
 		} else if (main_render_pass == 1) {
@@ -393,6 +427,18 @@ struct GTA5 : public GameController {
 			copyTarget("albedo", albedo_output);
 			main_render_pass = 0;
 		}
+
+		if (info.pixel_shader == ShaderHash())
+		{
+
+		}
+
+		// Draw the water segments
+		//if (water_shader.count(info.pixel_shader))
+		//{
+		//	copyTarget("water", info.outputs[1]);
+		//}
+
 		return DEFAULT;
 	}
 	virtual void endDraw(const DrawInfo & info) override {
@@ -400,12 +446,6 @@ struct GTA5 : public GameController {
 			// Draw the final image (right before the image is distorted)
 			copyTarget("final", info.outputs[0]);
 		}
-
-		//// Draw the water segments
-		//if (final_shader.count(info.pixel_shader))
-		//{
-		//	copyTarget("water", info.outputs[0]);
-		//}
 	}
 	virtual std::string gameState() const override {
 		if (tracker)
