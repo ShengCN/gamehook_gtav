@@ -65,7 +65,8 @@ struct GTA5 : public GameController {
 	}
 	virtual std::vector<ProvidedTarget> providedCustomTargets() const {
 		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
-		return { { "disparity", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };
+		/*return { { "disparity", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };*/
+		return { {"flow_disp", TargetType::R32G32B32A32_FLOAT, true}, { "flow", TargetType::R32G32_FLOAT}, { "disparity", TargetType::R32_FLOAT },{ "occlusion", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };
 	}
 	CBufferVariable rage_matrices = { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} }, wheel_matrices = { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, rage_bonemtx = { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
 	enum ObjectType {
