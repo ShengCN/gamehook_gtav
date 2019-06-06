@@ -61,7 +61,7 @@ struct GTA5 : public GameController {
 		return false;
 	}
 	virtual std::vector<ProvidedTarget> providedTargets() const override {
-		return { {"albedo"}, {"final"},{"water"}, { "prev_disp", TargetType::R32_FLOAT, true } };
+		return { {"albedo"}, {"final"}, {"water"}, { "prev_disp", TargetType::R32_FLOAT, true } };
 	}
 	virtual std::vector<ProvidedTarget> providedCustomTargets() const {
 		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
