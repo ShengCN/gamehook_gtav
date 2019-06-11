@@ -9,6 +9,7 @@
 #include <mutex>
 #include <Windows.h>
 #include <fstream>
+#include <unordered_map>
 
 const float TRACKING_RAD = 0.5f;
 const float TRACKING_QUAT = 0.1f;
@@ -90,6 +91,25 @@ uint32_t ID(uint32_t id, TrackedFrame::ObjectType t) {
 	return ((uint32_t)t) << 28 | id;
 }
 
+// Weather hash map
+std::unordered_map<Hash, std::string> weather_map
+{
+	{2544503417,			"EXTRASUNNY"	}	,
+	{916995460,				"CLEAR"			}	,
+	{821931868,				"CLOUDS"		}	,
+	{282916021,				"SMOG"			}	,
+	{2926802500,			"FOGGY"			}	,
+	{3146353965,			"OVERCAST"		}	,
+	{1420204096,			"RAIN"			}	,
+	{3061285535,			"THUNDER"		}	,
+	{1840358669,			"CLEARING"		}	,
+	{2764706598,			"NEUTRAL"		}	,
+	{4021743606,				"SNOW"			}	,
+	{669657108 ,				"BLIZZARD"		}	,
+	{603685163 ,			"SNOWLIGHT"		}	,
+	{2865350805,				"XMAS"			}
+};
+
 // #json_track_fetch
 void TrackedFrame::fetch() {
 	static std::mutex fetching;
@@ -170,6 +190,9 @@ void TrackedFrame::fetch() {
 	info.fov = fov;
 	info.near_plane = near_plane;
 	info.far_plane = far_plane;
+
+	// get current weather hash
+	info.weather = weather_map.at(invoke<Hash>(0x564B884A05EC45A3));
 }
 
 //TrackedFrame::Object * TrackedFrame::operator[](uint32_t id) {

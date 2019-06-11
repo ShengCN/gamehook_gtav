@@ -3,6 +3,8 @@
 #include <unordered_map>
 #include "json.h"
 #include "util.h"
+#include "scripthook/natives.h"
+#include <string>
 
 #ifndef _WINDEF_
 struct HINSTANCE__; // Forward or never
@@ -12,15 +14,16 @@ typedef HINSTANCE HMODULE;
 void initGTA5State(HMODULE hInstance);
 void releaseGTA5State(HMODULE hInstance);
 
-
 struct GameInfo {
 	Vec3f position, forward_vector;
 	Vec3f cam_pos, cam_ori;
 	float fov;
 	float near_plane;
 	float far_plane;
+	std::string weather;
 };
-TOJSON(GameInfo, position, forward_vector, cam_pos, cam_ori, fov, near_plane, far_plane)
+
+TOJSON(GameInfo, position, forward_vector, cam_pos, cam_ori, fov, near_plane, far_plane, weather)
 
 // N_OBJECTS Maximum number of frames, needs to be a power of 2
 #define N_OBJECTS (1<<13)

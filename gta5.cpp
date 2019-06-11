@@ -406,7 +406,6 @@ struct GTA5 : public GameController {
 		{
 			copyTarget("water", water_output);
 			water_render_pass = 0;
-			LOG(INFO) <<"Info size: "<< info.outputs.size();
 		}
 
 		return DEFAULT;
