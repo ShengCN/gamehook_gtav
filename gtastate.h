@@ -20,10 +20,11 @@ struct GameInfo {
 	float fov;
 	float near_plane;
 	float far_plane;
+	int hour;
 	std::string weather;
 };
 
-TOJSON(GameInfo, position, forward_vector, cam_pos, cam_ori, fov, near_plane, far_plane, weather)
+TOJSON(GameInfo, position, forward_vector, cam_pos, cam_ori, fov, near_plane, far_plane, hour, weather)
 
 // N_OBJECTS Maximum number of frames, needs to be a power of 2
 #define N_OBJECTS (1<<13)

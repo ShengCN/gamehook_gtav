@@ -191,6 +191,8 @@ void TrackedFrame::fetch() {
 	info.near_plane = near_plane;
 	info.far_plane = far_plane;
 
+	info.hour = TIME::GET_CLOCK_HOURS();
+
 	// get current weather hash
 	info.weather = weather_map.at(invoke<Hash>(0x564B884A05EC45A3));
 }

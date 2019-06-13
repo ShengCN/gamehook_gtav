@@ -100,6 +100,7 @@ struct GTA5 : public GameController {
 	};
 
 	ShaderHash water_shader_hash = ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e");
+	ShaderHash stencil_shader_hash = ShaderHash("d312d587:8f180f11:94d8f41a:90463bd1");
 
 	// #inject_shaders
 	virtual std::shared_ptr<Shader> injectShader(std::shared_ptr<Shader> shader) {
@@ -221,6 +222,7 @@ struct GTA5 : public GameController {
 		main_render_pass = 2;
 		water_render_pass = 2;
 		albedo_output = RenderTargetView();
+		water_output = DepthStencilView();
 
 		// cbuffer creation
 		if (!id_buffer) id_buffer = createCBuffer("IDBuffer", sizeof(int));
@@ -255,7 +257,8 @@ struct GTA5 : public GameController {
 
 	// #draw_function
 	RenderTargetView albedo_output;
-	RenderTargetView water_output;
+	//RenderTargetView water_output;
+	DepthStencilView water_output;
 	virtual DrawType startDraw(const DrawInfo & info) override {
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2 && info.type == DrawInfo::INDEX && info.instances == 0) {
 			bool has_rage_matrices = rage_matrices.has(info.vertex_shader);
@@ -397,9 +400,9 @@ struct GTA5 : public GameController {
 			main_render_pass = 0;
 		}
 
-		if (info.pixel_shader == water_shader_hash)
+		if (info.pixel_shader == stencil_shader_hash)
 		{
-			water_output = info.outputs[0];
+			water_output = info.depth_output;
 			water_render_pass = 1;
 		}
 		else if (water_render_pass == 1)
