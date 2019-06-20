@@ -18,6 +18,19 @@
 
 uint32_t MAX_UNTRACKED_OBJECT_ID = 1 << 14;
 
+enum KB_Keys
+{
+	Q = 0x51,
+	E = 0x45,
+	W = 0x57,
+	A = 0x41,
+	S = 0x53,
+	D = 0x44,
+	J = 0x4A,
+	L = 0x4C,
+	I = 0x49,
+	K = 0x4B
+};
 // For debugging, use the current matrices, not the past to estimate the flow
 //#define CURRENT_FLOW
 
@@ -288,11 +301,22 @@ struct GTA5 : public GameController {
 		}
 	}
 
+	// #condition_check
+	bool is_info_vertice(const DrawInfo & info)
+	{
+		return 	(currentRecordingType() != NONE) &&
+			info.outputs.size() &&
+			info.outputs[0].W == defaultWidth() &&
+			info.outputs[0].H == defaultHeight() &&
+			info.outputs.size() >= 2 &&
+			info.type == DrawInfo::INDEX &&
+			info.instances == 0;
+	}
+
 	// #draw_function
 	RenderTargetView albedo_output;
 	RenderTargetView water_output;
 	virtual DrawType startDraw(const DrawInfo & info) override {
-
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2) 
 		{
 			if (tree_hash_sets.count(info.pixel_shader))
@@ -343,6 +367,7 @@ struct GTA5 : public GameController {
 					main_render_pass = 1;
 				}
 				if (main_render_pass == 1) {
+#pragma region camera_matrix
 					uint32_t id = 0;
 					if (wp && wp->size() >= 3 * sizeof(float4x4)) {
 						// Fetch the rage matrices gWorld, gWorldView, gWorldViewProj
@@ -457,6 +482,7 @@ struct GTA5 : public GameController {
 						
 						return RIGID;
 					}
+#pragma endregion camera_matrix
 				}
 			}
 		} else if (main_render_pass == 1) {
