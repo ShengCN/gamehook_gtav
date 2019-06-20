@@ -66,9 +66,10 @@ struct GTA5 : public GameController {
 	virtual std::vector<ProvidedTarget> providedCustomTargets() const {
 		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
 		/*return { { "disparity", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };*/
-		return { {"flow_disp", TargetType::R32G32B32A32_FLOAT, true}, { "flow", TargetType::R32G32_FLOAT}, { "disparity", TargetType::R32_FLOAT },{ "occlusion", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };
+		return { {"flow_disp", TargetType::R32G32B32A32_FLOAT, true}, { "flow", TargetType::R32G32_FLOAT}, { "disparity", TargetType::R32_FLOAT },{ "occlusion", TargetType::R32_FLOAT }, { "semantic_out", TargetType::R32_UINT } };
 	}
 	CBufferVariable rage_matrices = { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} }, wheel_matrices = { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, rage_bonemtx = { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
+
 	enum ObjectType {
 		UNKNOWN=0,
 		VEHICLE=1,
@@ -84,7 +85,7 @@ struct GTA5 : public GameController {
 
 	// #create_injection_shaders
 	std::shared_ptr<Shader> vs_static_shader	= Shader::create(ByteCode(VS_STATIC,	VS_STATIC + sizeof(VS_STATIC))),
-							ps_output_shader	= Shader::create(ByteCode(PS_OUTPUT,	PS_OUTPUT + sizeof(PS_OUTPUT)),		{ { "SV_Target6", "flow_disp" }, { "SV_Target7", "object_id" } }),
+							ps_output_shader	= Shader::create(ByteCode(PS_OUTPUT,	PS_OUTPUT + sizeof(PS_OUTPUT)),		{ { "SV_Target6", "flow_disp" }, { "SV_Target7", "semantic_out" } }),
 							flow_shader			= Shader::create(ByteCode(PS_FLOW,		PS_FLOW + sizeof(PS_FLOW)),			{ { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } }),
 							noflow_shader		= Shader::create(ByteCode(PS_NOFLOW,	PS_NOFLOW + sizeof(PS_NOFLOW)),		{ { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } });
 
@@ -100,7 +101,13 @@ struct GTA5 : public GameController {
 	};
 
 	ShaderHash water_shader_hash = ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e");
-	ShaderHash stencil_shader_hash = ShaderHash("d312d587:8f180f11:94d8f41a:90463bd1");
+
+	// have not find some good way to do this
+	std::unordered_set<ShaderHash> tree_hash_sets = { ShaderHash("9ededd5c:7ee01e39:8dc68358:6820a65c"), ShaderHash("b2a65ca7:aaa47d5c:1ed49508:45246fe6"), ShaderHash("7c6662bb:8d975d9d:6918a87d:3e1f330c"), ShaderHash("24991f12:b1f6bd73:e4ef5d92:b82790d3")};
+	std::unordered_set<ShaderHash> road_hash_sets;
+	std::unordered_set<ShaderHash> terrain_hash_sets;
+	std::unordered_set<ShaderHash> ped_hash_sets;
+	std::unordered_set<ShaderHash> vehicle_hash_sets;
 
 	// #inject_shaders
 	virtual std::shared_ptr<Shader> injectShader(std::shared_ptr<Shader> shader) {
@@ -146,6 +153,32 @@ struct GTA5 : public GameController {
 
 		// #find_final_shader
 		if (shader->type() == Shader::PIXEL) {
+			if (containsCBuffer(shader, "trees") || containsCBuffer(shader, "grass"))
+			{
+				// LOG(INFO) << "Find some trees";
+				 tree_hash_sets.insert(shader->hash());
+			}
+			
+			if (containsCBuffer(shader, "ped_"))
+			{
+				ped_hash_sets.insert(shader->hash());
+			}
+
+			if (containsCBuffer(shader, "vehicle"))
+			{
+				vehicle_hash_sets.insert(shader->hash());
+			}
+
+			if (containsCBuffer(shader, "terrain"))
+			{
+				terrain_hash_sets.insert(shader->hash());
+			}
+		
+			if (containsCBuffer(shader, "detail_map_locals"))
+			{
+				road_hash_sets.insert(shader->hash());
+			}
+			
 			// prior to v1.0.1365.1
 			if (hasTexture(shader, "BackBufferTexture")) {
 				final_shader.insert(shader->hash());
@@ -163,10 +196,8 @@ struct GTA5 : public GameController {
 
 			if (hasCBuffer(shader, "misc_globals")) {
 				// Inject the shader output
-				// seems like it is for albedo
 				return ps_output_shader;
 			}
-
 		}
 		return nullptr;
 	}
@@ -205,6 +236,7 @@ struct GTA5 : public GameController {
 	float4x4 avg_world = 0, avg_world_view = 0, avg_world_view_proj = 0, prev_view = 0, prev_view_proj = 0;
 	uint8_t main_render_pass = 0;
 	uint8_t water_render_pass = 0;
+	uint8_t semantic_render_pass = 0;
 	uint32_t oid = 1, base_id = 1;
 
 	// #cbuffer
@@ -221,8 +253,9 @@ struct GTA5 : public GameController {
 
 		main_render_pass = 2;
 		water_render_pass = 2;
+		semantic_render_pass = 2;
 		albedo_output = RenderTargetView();
-		water_output = DepthStencilView();
+		water_output = RenderTargetView();
 
 		// cbuffer creation
 		if (!id_buffer) id_buffer = createCBuffer("IDBuffer", sizeof(int));
@@ -257,9 +290,43 @@ struct GTA5 : public GameController {
 
 	// #draw_function
 	RenderTargetView albedo_output;
-	//RenderTargetView water_output;
-	DepthStencilView water_output;
+	RenderTargetView water_output;
 	virtual DrawType startDraw(const DrawInfo & info) override {
+
+		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2) 
+		{
+			if (tree_hash_sets.count(info.pixel_shader))
+			{
+				id_buffer->set(256);
+				bindCBuffer(id_buffer);
+			}
+			else if (ped_hash_sets.count(info.pixel_shader))
+			{
+				id_buffer->set(info.texture_id);
+				bindCBuffer(id_buffer);
+			}
+			else if (vehicle_hash_sets.count(info.pixel_shader))
+			{
+				id_buffer->set(64);
+				bindCBuffer(id_buffer);
+			}
+			else if (terrain_hash_sets.count(info.pixel_shader))
+			{
+				id_buffer->set(32);
+				bindCBuffer(id_buffer);
+			}
+			else if (road_hash_sets.count(info.pixel_shader))
+			{
+				id_buffer->set(16);
+				bindCBuffer(id_buffer);
+			}
+			else
+			{
+				id_buffer->set(0);
+				bindCBuffer(id_buffer);
+			}
+		}
+
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2 && info.type == DrawInfo::INDEX && info.instances == 0) {
 			bool has_rage_matrices = rage_matrices.has(info.vertex_shader);
 			ObjectType type = UNKNOWN;
@@ -387,9 +454,7 @@ struct GTA5 : public GameController {
 						}
 						prev_buffer->set((float4x4*)prev_rage, 4, 0);
 						bindCBuffer(prev_buffer);
-
-						id_buffer->set(id);
-						bindCBuffer(id_buffer);
+						
 						return RIGID;
 					}
 				}
@@ -400,9 +465,9 @@ struct GTA5 : public GameController {
 			main_render_pass = 0;
 		}
 
-		if (info.pixel_shader == stencil_shader_hash)
+		if (info.pixel_shader == water_shader_hash)
 		{
-			water_output = info.depth_output;
+			water_output = info.outputs[0];
 			water_render_pass = 1;
 		}
 		else if (water_render_pass == 1)

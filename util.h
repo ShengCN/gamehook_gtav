@@ -19,6 +19,7 @@ struct CBufferVariable {
 };
 
 bool hasCBuffer(std::shared_ptr<Shader> s, const std::string & name);
+bool containsCBuffer(std::shared_ptr<Shader> s, const std::string &name);
 bool hasSBuffer(std::shared_ptr<Shader> s, const std::string & name);
 bool hasTexture(std::shared_ptr<Shader> s, const std::string & name);
 bool hasBuffer(const std::vector<Shader::Buffer> & b, const std::string & name);

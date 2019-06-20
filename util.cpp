@@ -56,8 +56,21 @@ bool hasBuffer(const std::vector<Shader::Buffer> & b, const std::string & name) 
 	return has(b, name);
 }
 
+template<typename T>
+bool contained(const std::vector<T> & b, const std::string & name)
+{
+	return std::count_if(b.cbegin(), b.cend(), [&name](const T &b) {return b.name.find(name) != -1 ? true : false; });
+}
+
+
 bool hasCBuffer(std::shared_ptr<Shader> s, const std::string & name) {
 	return has(s->cbuffers(), name);
+}
+
+
+bool containsCBuffer(std::shared_ptr<Shader> s, const std::string &name)
+{
+	return contained(s->cbuffers(), name);
 }
 
 bool hasSBuffer(std::shared_ptr<Shader> s, const std::string & name) {
