@@ -50,7 +50,7 @@ struct Vec3f {
 	}
 };
 std::string toJSON(const Vec3f & v);
-
+std::string toJSON(const float4x4 &m);
 struct Quaternion {
 	static Quaternion fromMatrix(const float4x4 & m);
 	float x, y, z, w;

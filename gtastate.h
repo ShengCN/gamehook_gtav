@@ -5,6 +5,7 @@
 #include "util.h"
 #include "scripthook/natives.h"
 #include <string>
+#include "Global_Variable.h"
 
 #ifndef _WINDEF_
 struct HINSTANCE__; // Forward or never
@@ -22,9 +23,46 @@ struct GameInfo {
 	float far_plane;
 	int hour;
 	std::string weather;
+	Vec3f skel_spine_root;
+	Vec3f skel_spine_3;
+	Vec3f skel_l_upperarm;
+	Vec3f skel_r_upperarm;
+	Vec3f skel_pelvis;
+	Vec3f skel_l_hand;
+	Vec3f skel_r_hand;
+	Vec3f skel_l_foot;
+	Vec3f skel_r_foot;
+	
+	float4x4 g_world;
+	float4x4 g_world_view;
+	float4x4 g_world_view_project;
+	int frame_id;
 };
 
-TOJSON(GameInfo, position, forward_vector, cam_pos, cam_ori, fov, near_plane, far_plane, hour, weather)
+TOJSON(GameInfo, 
+	position, 
+	forward_vector, 
+	cam_pos, 
+	cam_ori, 
+	fov, 
+	near_plane, 
+	far_plane, 
+	hour, 
+	weather, 
+	skel_spine_root, 
+	skel_spine_3, 
+	skel_l_upperarm, 
+	skel_r_upperarm, 
+	skel_pelvis, 
+	skel_l_hand, 
+	skel_r_hand, 
+	skel_l_foot, 
+	skel_r_foot,
+	g_world,
+	g_world_view,
+	g_world_view_project,
+	frame_id
+)
 
 // N_OBJECTS Maximum number of frames, needs to be a power of 2
 #define N_OBJECTS (1<<13)
@@ -53,6 +91,7 @@ public:
 	friend struct Tracker;
 	Object objects[N_OBJECTS];
 	NNSearch2D<size_t> object_map;
+
 	void fetch();
 
 public:

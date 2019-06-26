@@ -15,8 +15,10 @@
 #include "vs_static.h"
 #include "ps_flow.h"
 #include "ps_noflow.h"
+#include "Global_Variable.h"
 
 uint32_t MAX_UNTRACKED_OBJECT_ID = 1 << 14;
+Global_Variable* Global_Variable::_instance = nullptr;
 
 enum KB_Keys
 {
@@ -62,6 +64,12 @@ struct VehicleTrack {
 	float4x4 rage[4];
 	float4x4 wheel[16][2];
 };
+struct camera_matrix
+{
+	float view_matrix[4][4] = { 0 };
+	bool is_initialized = false;
+};
+
 const size_t RAGE_MAT_SIZE = 4 * sizeof(float4x4);
 const size_t VEHICLE_SIZE = RAGE_MAT_SIZE;
 const size_t WHEEL_SIZE = RAGE_MAT_SIZE + 2 * sizeof(float4x4);
@@ -81,7 +89,11 @@ struct GTA5 : public GameController {
 		/*return { { "disparity", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };*/
 		return { {"flow_disp", TargetType::R32G32B32A32_FLOAT, true}, { "flow", TargetType::R32G32_FLOAT}, { "disparity", TargetType::R32_FLOAT },{ "occlusion", TargetType::R32_FLOAT }, { "semantic_out", TargetType::R32_UINT } };
 	}
-	CBufferVariable rage_matrices = { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} }, wheel_matrices = { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, rage_bonemtx = { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
+	CBufferVariable rage_matrices = { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} },
+					rage_gWorld_View = { "rage_matrices", "gWorldView", {4 * 16 * sizeof(float)}, {4 * 16 * sizeof(float)} },
+					rage_gWorld_Proj = { "rage_matrices", "gWorldViewProj", {2 * 4 * 16 * sizeof(float)}, {4 * 16 * sizeof(float)} },
+					wheel_matrices = { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, 
+					rage_bonemtx = { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
 
 	enum ObjectType {
 		UNKNOWN=0,
@@ -121,6 +133,7 @@ struct GTA5 : public GameController {
 	std::unordered_set<ShaderHash> terrain_hash_sets;
 	std::unordered_set<ShaderHash> ped_hash_sets;
 	std::unordered_set<ShaderHash> vehicle_hash_sets;
+	std::unordered_set<ShaderHash> water_hash_sets;
 
 	// #inject_shaders
 	virtual std::shared_ptr<Shader> injectShader(std::shared_ptr<Shader> shader) {
@@ -191,7 +204,7 @@ struct GTA5 : public GameController {
 			{
 				road_hash_sets.insert(shader->hash());
 			}
-			
+
 			// prior to v1.0.1365.1
 			if (hasTexture(shader, "BackBufferTexture")) {
 				final_shader.insert(shader->hash());
@@ -256,10 +269,15 @@ struct GTA5 : public GameController {
 	std::shared_ptr<CBuffer> id_buffer, prev_buffer, prev_wheel_buffer, prev_rage_bonemtx, disparity_correction;
 	TrackedFrame * tracker = nullptr;
 	std::shared_ptr<TrackData> last_vehicle;
+
+	std::shared_ptr<CBuffer> cur_rage_buffer;
+	camera_matrix cur_came_mat;
+
 	double start_time;
 	uint32_t current_frame_id = 1, wheel_count = 0;
 
 	size_t TS = 0;
+
 	// #start_frame
 	virtual void startFrame(uint32_t frame_id) override {
 		start_time = time();
@@ -272,6 +290,7 @@ struct GTA5 : public GameController {
 
 		// cbuffer creation
 		if (!id_buffer) id_buffer = createCBuffer("IDBuffer", sizeof(int));
+		if (!cur_rage_buffer) cur_rage_buffer = createCBuffer("rage_matrices", 4 * sizeof(float4x4));
 		if (!prev_buffer) prev_buffer = createCBuffer("prev_rage_matrices", 4*sizeof(float4x4));
 		if (!prev_wheel_buffer) prev_wheel_buffer = createCBuffer("prev_matWheelBuffer", 4 * sizeof(float4x4));
 		if (!prev_rage_bonemtx) prev_rage_bonemtx = createCBuffer("prev_rage_bonemtx", BONE_MTX_SIZE);
@@ -279,6 +298,8 @@ struct GTA5 : public GameController {
 		base_id = oid = 1;
 		last_vehicle.reset();
 		wheel_count = 0;
+
+		// #track_frame_game_state_information
 		tracker = trackNextFrame();
 
 		avg_world = 0;
@@ -297,6 +318,8 @@ struct GTA5 : public GameController {
 			// Copy the disparity buffer for occlusion testing
 			copyTarget("prev_disp", "disparity");
 
+			auto gv = Global_Variable::Instance();
+			gv->cur_frame_id = frame_id;
 			LOG(INFO) << "T = " << time() - start_time << "   S = " << TS;
 		}
 	}
@@ -317,6 +340,7 @@ struct GTA5 : public GameController {
 	RenderTargetView albedo_output;
 	RenderTargetView water_output;
 	virtual DrawType startDraw(const DrawInfo & info) override {
+		
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2) 
 		{
 			if (tree_hash_sets.count(info.pixel_shader))
@@ -344,6 +368,11 @@ struct GTA5 : public GameController {
 				id_buffer->set(16);
 				bindCBuffer(id_buffer);
 			}
+			else if (water_hash_sets.count(info.pixel_shader))
+			{
+				id_buffer->set(100);
+				bindCBuffer(id_buffer);
+			}
 			else
 			{
 				id_buffer->set(0);
@@ -353,6 +382,7 @@ struct GTA5 : public GameController {
 
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2 && info.type == DrawInfo::INDEX && info.instances == 0) {
 			bool has_rage_matrices = rage_matrices.has(info.vertex_shader);
+			auto gv = Global_Variable::Instance();
 			ObjectType type = UNKNOWN;
 			{
 				auto i = object_type.find(info.vertex_shader);
@@ -361,6 +391,8 @@ struct GTA5 : public GameController {
 			}
 			if (has_rage_matrices && main_render_pass > 0) {
 				std::shared_ptr<GPUMemory> wp = rage_matrices.fetch(this, info.vertex_shader, info.vs_cbuffers, true);
+
+
 				if (main_render_pass == 2) {
 					// Starting the main render pass
 					albedo_output = info.outputs[0];
@@ -375,6 +407,10 @@ struct GTA5 : public GameController {
 						float4x4 prev_rage[4] = { rage_mat[0], rage_mat[1], rage_mat[2], rage_mat[3] };
 						mul(&prev_rage[2], rage_mat[0], prev_view_proj);
 						mul(&prev_rage[1], rage_mat[0], prev_view);
+						
+						gv->cur_g_world = rage_mat[0];
+						gv->cur_g_world_view = rage_mat[1];
+						gv->cur_g_world_view_project = rage_mat[2];
 
 						// Sum up the world and world_view_proj matrices to later compute the view_proj matrix
 						if (type != PEDESTRIAN && type != PLAYER) {
@@ -477,6 +513,7 @@ struct GTA5 : public GameController {
 								return HIDE;
 							}
 						}
+
 						prev_buffer->set((float4x4*)prev_rage, 4, 0);
 						bindCBuffer(prev_buffer);
 						
@@ -505,11 +542,11 @@ struct GTA5 : public GameController {
 		return DEFAULT;
 	}
 	virtual void endDraw(const DrawInfo & info) override {
+		
 		if (final_shader.count(info.pixel_shader)) {
 			// Draw the final image (right before the image is distorted)
 			copyTarget("final", info.outputs[0]);
 		}
-
 	}
 	virtual std::string gameState() const override {
 		if (tracker)

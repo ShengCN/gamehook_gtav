@@ -129,6 +129,14 @@ std::string toJSON(const Quaternion & v) {
 	return "[" + std::to_string(v.x) + "," + std::to_string(v.y) + "," + std::to_string(v.z) + "," + std::to_string(v.w) + "]";
 }
 
+std::string toJSON(const float4x4 &m)
+{
+	return "[" + std::to_string(m.d[0][0])+ "," + std::to_string(m.d[0][1])+ "," + std::to_string(m.d[0][2])+ "," + std::to_string(m.d[0][3])+ ","
+			   + std::to_string(m.d[1][0])+ "," + std::to_string(m.d[1][1])+ "," + std::to_string(m.d[1][2])+ "," + std::to_string(m.d[1][3])+ "," 
+			   + std::to_string(m.d[2][0])+ "," + std::to_string(m.d[2][1])+ "," + std::to_string(m.d[2][2])+ "," + std::to_string(m.d[2][3])+ "," 
+			   + std::to_string(m.d[3][0])+ "," + std::to_string(m.d[3][1])+ "," + std::to_string(m.d[3][2])+ "," + std::to_string(m.d[3][3])+"]";
+}
+
 float4x4::float4x4(float v) {
 	for (int k = 0; k < 16; k++)
 		((float*)d)[k] = v;

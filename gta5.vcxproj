@@ -171,6 +171,7 @@
   <ItemGroup>
     <ClInclude Include="..\..\SDK\log.h" />
     <ClInclude Include="..\..\SDK\sdk.h" />
+    <ClInclude Include="Global_Variable.h" />
     <ClInclude Include="gtastate.h" />
     <ClInclude Include="scripthook\enums.h" />
     <ClInclude Include="scripthook\main.h" />

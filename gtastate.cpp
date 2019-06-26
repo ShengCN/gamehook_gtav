@@ -110,6 +110,11 @@ std::unordered_map<Hash, std::string> weather_map
 	{2865350805,				"XMAS"			}
 };
 
+inline Vec3f Vector3_2_Vec3f(Vector3 v)
+{
+	return Vec3f{ v.x, v.y, v.z };
+}
+
 // #json_track_fetch
 void TrackedFrame::fetch() {
 	static std::mutex fetching;
@@ -184,7 +189,6 @@ void TrackedFrame::fetch() {
 		far_plane = CAM::GET_CAM_FAR_CLIP(cur_camera);
 	}
 
-
 	info.cam_pos = { position.x, position.y, position.z };
 	info.cam_ori = { orientation.x, orientation.y, orientation.z };
 	info.fov = fov;
@@ -195,6 +199,24 @@ void TrackedFrame::fetch() {
 
 	// get current weather hash
 	info.weather = weather_map.at(invoke<Hash>(0x564B884A05EC45A3));
+
+	// save current player id first
+	info.skel_spine_root			= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_Spine_Root)));
+	info.skel_spine_3				= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_Spine3)));
+	info.skel_l_upperarm			= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_L_UpperArm)));
+	info.skel_r_upperarm			= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_R_UpperArm)));
+	info.skel_pelvis				= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_Pelvis)));
+	info.skel_l_hand				= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_L_Hand)));
+	info.skel_r_hand				= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_R_Hand)));
+	info.skel_l_foot				= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_L_Foot)));
+	info.skel_r_foot				= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_R_Foot)));
+
+	// copy the matrices
+	auto gv = Global_Variable::Instance();
+	info.g_world = gv->cur_g_world;
+	info.g_world_view = gv->cur_g_world_view;
+	info.g_world_view_project =  gv->cur_g_world_view_project;
+	info.frame_id = gv->cur_frame_id;
 }
 
 //TrackedFrame::Object * TrackedFrame::operator[](uint32_t id) {
