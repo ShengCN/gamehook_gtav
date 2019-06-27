@@ -78,7 +78,7 @@ struct GTA5 : public GameController {
 		return false;
 	}
 	virtual std::vector<ProvidedTarget> providedTargets() const override {
-		return { {"albedo"}, {"final"}, {"water"}, { "prev_disp", TargetType::R32_FLOAT, true } };
+		return { {"albedo"}, {"normal"},{"final"}, {"water"}, { "prev_disp", TargetType::R32_FLOAT, true }, {"ao"} };
 	}
 	virtual std::vector<ProvidedTarget> providedCustomTargets() const {
 		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
@@ -282,6 +282,8 @@ struct GTA5 : public GameController {
 		semantic_render_pass = 2;
 		albedo_output = RenderTargetView();
 		water_output = RenderTargetView();
+		normal_output = RenderTargetView();
+		ao_output = RenderTargetView();
 
 		// cbuffer creation
 		if (!id_buffer) id_buffer = createCBuffer("IDBuffer", sizeof(int));
@@ -336,6 +338,8 @@ struct GTA5 : public GameController {
 	// #draw_function
 	RenderTargetView albedo_output;
 	RenderTargetView water_output;
+	RenderTargetView normal_output;
+	RenderTargetView ao_output;
 	virtual DrawType startDraw(const DrawInfo & info) override {
 		
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2) 
@@ -393,7 +397,10 @@ struct GTA5 : public GameController {
 				if (main_render_pass == 2) {
 					// Starting the main render pass
 					albedo_output = info.outputs[0];
+					normal_output = info.outputs[1];
+					ao_output = info.outputs[3];
 					main_render_pass = 1;
+
 				}
 				if (main_render_pass == 1) {
 #pragma region camera_matrix
@@ -522,6 +529,8 @@ struct GTA5 : public GameController {
 		} else if (main_render_pass == 1) {
 			// End of the main render pass
 			copyTarget("albedo", albedo_output);
+			copyTarget("normal", normal_output);
+			copyTarget("ao", ao_output);
 			main_render_pass = 0;
 		}
 
