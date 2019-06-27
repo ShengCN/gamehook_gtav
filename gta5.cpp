@@ -7,6 +7,7 @@
 #include <chrono>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include "scripthook\main.h"
 #include "scripthook\natives.h"
 #include "util.h"
@@ -63,11 +64,6 @@ struct TrackData: public TrackedFrame::PrivateData {
 struct VehicleTrack {
 	float4x4 rage[4];
 	float4x4 wheel[16][2];
-};
-struct camera_matrix
-{
-	float view_matrix[4][4] = { 0 };
-	bool is_initialized = false;
 };
 
 const size_t RAGE_MAT_SIZE = 4 * sizeof(float4x4);
@@ -271,7 +267,6 @@ struct GTA5 : public GameController {
 	std::shared_ptr<TrackData> last_vehicle;
 
 	std::shared_ptr<CBuffer> cur_rage_buffer;
-	camera_matrix cur_came_mat;
 
 	double start_time;
 	uint32_t current_frame_id = 1, wheel_count = 0;
@@ -319,8 +314,10 @@ struct GTA5 : public GameController {
 			copyTarget("prev_disp", "disparity");
 
 			auto gv = Global_Variable::Instance();
-			gv->cur_frame_id = frame_id;
-			LOG(INFO) << "T = " << time() - start_time << "   S = " << TS;
+			gv->cur_cam.frame_id = frame_id;
+			gv->cur_cam.dump();
+
+			LOG(INFO) <<"Current frame: " << gv->cur_cam.frame_id << " T = " << time() - start_time << "   S = " << TS;
 		}
 	}
 
@@ -408,9 +405,9 @@ struct GTA5 : public GameController {
 						mul(&prev_rage[2], rage_mat[0], prev_view_proj);
 						mul(&prev_rage[1], rage_mat[0], prev_view);
 						
-						gv->cur_g_world = rage_mat[0];
-						gv->cur_g_world_view = rage_mat[1];
-						gv->cur_g_world_view_project = rage_mat[2];
+						gv->cur_cam.g_world = rage_mat[0];
+						gv->cur_cam.g_world_view = rage_mat[1];
+						gv->cur_cam.g_world_view_project = rage_mat[2];
 
 						// Sum up the world and world_view_proj matrices to later compute the view_proj matrix
 						if (type != PEDESTRIAN && type != PLAYER) {

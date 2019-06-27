@@ -5,7 +5,6 @@
 #include "util.h"
 #include "scripthook/natives.h"
 #include <string>
-#include "Global_Variable.h"
 
 #ifndef _WINDEF_
 struct HINSTANCE__; // Forward or never
@@ -32,11 +31,6 @@ struct GameInfo {
 	Vec3f skel_r_hand;
 	Vec3f skel_l_foot;
 	Vec3f skel_r_foot;
-	
-	float4x4 g_world;
-	float4x4 g_world_view;
-	float4x4 g_world_view_project;
-	int frame_id;
 };
 
 TOJSON(GameInfo, 
@@ -57,11 +51,7 @@ TOJSON(GameInfo,
 	skel_l_hand, 
 	skel_r_hand, 
 	skel_l_foot, 
-	skel_r_foot,
-	g_world,
-	g_world_view,
-	g_world_view_project,
-	frame_id
+	skel_r_foot
 )
 
 // N_OBJECTS Maximum number of frames, needs to be a power of 2

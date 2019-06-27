@@ -210,13 +210,6 @@ void TrackedFrame::fetch() {
 	info.skel_r_hand				= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_R_Hand)));
 	info.skel_l_foot				= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_L_Foot)));
 	info.skel_r_foot				= Vector3_2_Vec3f(ENTITY::GET_WORLD_POSITION_OF_ENTITY_BONE(pp, PED::GET_PED_BONE_INDEX(pp, SKEL_R_Foot)));
-
-	// copy the matrices
-	auto gv = Global_Variable::Instance();
-	info.g_world = gv->cur_g_world;
-	info.g_world_view = gv->cur_g_world_view;
-	info.g_world_view_project =  gv->cur_g_world_view_project;
-	info.frame_id = gv->cur_frame_id;
 }
 
 //TrackedFrame::Object * TrackedFrame::operator[](uint32_t id) {
