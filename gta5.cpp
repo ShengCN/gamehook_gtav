@@ -392,7 +392,7 @@ struct GTA5 : public GameController {
 				if (i != object_type.end())
 					type = i->second;
 			}
-			if (has_rage_matrices && main_pass_injection.cur_rendering_state == rendering_state::first_pass) {
+			if (has_rage_matrices && main_pass_injection.cur_rendering_state != rendering_state::second_pass) {
 				std::shared_ptr<GPUMemory> wp = rage_matrices.fetch(this, info.vertex_shader, info.vs_cbuffers, true);
 
 
