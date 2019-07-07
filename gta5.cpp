@@ -66,6 +66,24 @@ struct VehicleTrack {
 	float4x4 wheel[16][2];
 };
 
+enum class rendering_state
+{
+	first_pass,
+	ready_for_capture,
+	second_pass
+};
+
+// inject to some specific ps output
+struct Texture_Injection
+{
+	ShaderHash ps_hash;
+	std::vector<RenderTargetView> output;
+	rendering_state cur_rendering_state;
+
+	Texture_Injection(ShaderHash hash = ShaderHash(), rendering_state rs = rendering_state::first_pass) 
+		:ps_hash(hash), cur_rendering_state(rs) {}
+};
+
 const size_t RAGE_MAT_SIZE = 4 * sizeof(float4x4);
 const size_t VEHICLE_SIZE = RAGE_MAT_SIZE;
 const size_t WHEEL_SIZE = RAGE_MAT_SIZE + 2 * sizeof(float4x4);
@@ -121,15 +139,12 @@ struct GTA5 : public GameController {
 		ShaderHash("4b031811:b6bf1c7f:ef4cd0c1:56541537") 
 	};
 
-	ShaderHash water_shader_hash = ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e");
-
 	// have not find some good way to do this
 	std::unordered_set<ShaderHash> tree_hash_sets = { ShaderHash("9ededd5c:7ee01e39:8dc68358:6820a65c"), ShaderHash("b2a65ca7:aaa47d5c:1ed49508:45246fe6"), ShaderHash("7c6662bb:8d975d9d:6918a87d:3e1f330c"), ShaderHash("24991f12:b1f6bd73:e4ef5d92:b82790d3")};
 	std::unordered_set<ShaderHash> road_hash_sets;
 	std::unordered_set<ShaderHash> terrain_hash_sets;
 	std::unordered_set<ShaderHash> ped_hash_sets;
 	std::unordered_set<ShaderHash> vehicle_hash_sets;
-	std::unordered_set<ShaderHash> water_hash_sets;
 
 	// #inject_shaders
 	virtual std::shared_ptr<Shader> injectShader(std::shared_ptr<Shader> shader) {
@@ -211,11 +226,6 @@ struct GTA5 : public GameController {
 				final_shader.insert(shader->hash());
 			}
 
-			if (shader->hash() == water_shader_hash)
-			{
-				water_shader.insert(shader->hash());
-			}
-
 			if (hasCBuffer(shader, "misc_globals")) {
 				// Inject the shader output
 				return ps_output_shader;
@@ -256,10 +266,12 @@ struct GTA5 : public GameController {
 	}
 
 	float4x4 avg_world = 0, avg_world_view = 0, avg_world_view_proj = 0, prev_view = 0, prev_view_proj = 0;
-	uint8_t main_render_pass = 0;
-	uint8_t water_render_pass = 0;
-	uint8_t semantic_render_pass = 0;
 	uint32_t oid = 1, base_id = 1;
+
+	ShaderHash water_hash = ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e");
+	// deferred shading injection, albedo, normal
+	Texture_Injection main_pass_injection = Texture_Injection(); 
+	Texture_Injection water_inject = Texture_Injection(water_hash);
 
 	// #cbuffer
 	std::shared_ptr<CBuffer> id_buffer, prev_buffer, prev_wheel_buffer, prev_rage_bonemtx, disparity_correction;
@@ -277,13 +289,12 @@ struct GTA5 : public GameController {
 	virtual void startFrame(uint32_t frame_id) override {
 		start_time = time();
 
-		main_render_pass = 2;
-		water_render_pass = 2;
-		semantic_render_pass = 2;
-		albedo_output = RenderTargetView();
-		water_output = RenderTargetView();
-		normal_output = RenderTargetView();
-		ao_output = RenderTargetView();
+		// reset injection
+		main_pass_injection = Texture_Injection();
+		main_pass_injection.output = std::vector<RenderTargetView>(2);
+
+		water_inject = Texture_Injection(water_hash);
+		water_inject.output = std::vector<RenderTargetView>(1);
 
 		// cbuffer creation
 		if (!id_buffer) id_buffer = createCBuffer("IDBuffer", sizeof(int));
@@ -336,10 +347,6 @@ struct GTA5 : public GameController {
 	}
 
 	// #draw_function
-	RenderTargetView albedo_output;
-	RenderTargetView water_output;
-	RenderTargetView normal_output;
-	RenderTargetView ao_output;
 	virtual DrawType startDraw(const DrawInfo & info) override {
 		
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2) 
@@ -369,11 +376,6 @@ struct GTA5 : public GameController {
 				id_buffer->set(16);
 				bindCBuffer(id_buffer);
 			}
-			else if (water_hash_sets.count(info.pixel_shader))
-			{
-				id_buffer->set(100);
-				bindCBuffer(id_buffer);
-			}
 			else
 			{
 				id_buffer->set(0);
@@ -390,19 +392,18 @@ struct GTA5 : public GameController {
 				if (i != object_type.end())
 					type = i->second;
 			}
-			if (has_rage_matrices && main_render_pass > 0) {
+			if (has_rage_matrices && main_pass_injection.cur_rendering_state == rendering_state::first_pass) {
 				std::shared_ptr<GPUMemory> wp = rage_matrices.fetch(this, info.vertex_shader, info.vs_cbuffers, true);
 
 
-				if (main_render_pass == 2) {
+				if (main_pass_injection.cur_rendering_state == rendering_state::first_pass) {
 					// Starting the main render pass
-					albedo_output = info.outputs[0];
-					normal_output = info.outputs[1];
-					ao_output = info.outputs[3];
-					main_render_pass = 1;
+					main_pass_injection.output[0] = info.outputs[0];
+					main_pass_injection.output[1] = info.outputs[1];
 
+					main_pass_injection.cur_rendering_state = rendering_state::ready_for_capture;
 				}
-				if (main_render_pass == 1) {
+				if (main_pass_injection.cur_rendering_state == rendering_state::ready_for_capture) {
 #pragma region camera_matrix
 					uint32_t id = 0;
 					if (wp && wp->size() >= 3 * sizeof(float4x4)) {
@@ -526,23 +527,22 @@ struct GTA5 : public GameController {
 #pragma endregion camera_matrix
 				}
 			}
-		} else if (main_render_pass == 1) {
+		} else if (main_pass_injection.cur_rendering_state == rendering_state::ready_for_capture) {
 			// End of the main render pass
-			copyTarget("albedo", albedo_output);
-			copyTarget("normal", normal_output);
-			copyTarget("ao", ao_output);
-			main_render_pass = 0;
+			copyTarget("albedo", main_pass_injection.output[0]);
+			copyTarget("normal", main_pass_injection.output[1]);
+			main_pass_injection.cur_rendering_state = rendering_state::second_pass;
 		}
 
-		if (info.pixel_shader == water_shader_hash)
+		if (info.pixel_shader == water_inject.ps_hash)
 		{
-			water_output = info.outputs[0];
-			water_render_pass = 1;
+			water_inject.output[0] = info.outputs[0];
+			water_inject.cur_rendering_state = rendering_state::ready_for_capture;
 		}
-		else if (water_render_pass == 1)
+		else if (water_inject.cur_rendering_state == rendering_state::ready_for_capture)
 		{
-			copyTarget("water", water_output);
-			water_render_pass = 0;
+			copyTarget("water", water_inject.output[0]);
+			water_inject.cur_rendering_state = rendering_state::second_pass;
 		}
 
 		return DEFAULT;

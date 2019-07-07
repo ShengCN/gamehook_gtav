@@ -27,7 +27,7 @@ private:
 		tm mytm;
 		localtime_s(&mytm, &mytime);
 		char stamp[128] = { 0 };
-		strftime(stamp, sizeof(stamp), "/%Y_%m_%d_%H_%M_%S/", &mytm);
+		strftime(stamp, sizeof(stamp), "/%Y_%m_%d_%H_%M_%S_camera/", &mytm);
 		output_folder = output_folder + stamp;
 		CreateDirectory(output_folder.c_str(), NULL);
 		LOG(INFO) << "GTAV Camera matrix saved in " << output_folder;
