@@ -93,10 +93,22 @@ struct GTA5 : public GameController {
 	GTA5() : GameController() {
 	}
 	virtual bool keyDown(unsigned char key, unsigned char special_status) {
+		if (key == (unsigned char)KB_Keys::Q)
+		{
+			LOG(INFO) << "Pressed Q";
+			return true;
+		}
+
+		if (key == (unsigned char)KB_Keys::W)
+		{
+			LOG(INFO) << "Pressed W";
+			return false;
+		}
+
 		return false;
 	}
 	virtual std::vector<ProvidedTarget> providedTargets() const override {
-		return { {"albedo"}, {"normal"},{"final"}, {"water"}, { "prev_disp", TargetType::R32_FLOAT, true }, {"ao"} };
+		return { {"albedo"}, {"normal"},{"final"}, {"water"}, { "prev_disp", TargetType::R32_FLOAT, true }, {"ao", TargetType::R8_UNORM} };
 	}
 	virtual std::vector<ProvidedTarget> providedCustomTargets() const {
 		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
@@ -216,6 +228,15 @@ struct GTA5 : public GameController {
 				road_hash_sets.insert(shader->hash());
 			}
 
+			if (hasTexture(shader, "gDeferredLightSampler0P") && hasTexture(shader, "PointSampler2"))
+			{
+				LOG(INFO) << "Find AO";
+				LOG(INFO) << shader->hash();
+				// ao_inject.ps_hash = shader->hash();
+				ao_set.insert(shader->hash());
+			}
+
+
 			// prior to v1.0.1365.1
 			if (hasTexture(shader, "BackBufferTexture")) {
 				final_shader.insert(shader->hash());
@@ -269,9 +290,11 @@ struct GTA5 : public GameController {
 	uint32_t oid = 1, base_id = 1;
 
 	ShaderHash water_hash = ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e");
+	std::unordered_set<ShaderHash> ao_set;
 	// deferred shading injection, albedo, normal
 	Texture_Injection main_pass_injection = Texture_Injection(); 
 	Texture_Injection water_inject = Texture_Injection(water_hash);
+	Texture_Injection ao_inject = Texture_Injection(ShaderHash("395d603b:e3c8ea46:2b8b3309:2054cff5"));
 
 	// #cbuffer
 	std::shared_ptr<CBuffer> id_buffer, prev_buffer, prev_wheel_buffer, prev_rage_bonemtx, disparity_correction;
@@ -295,6 +318,9 @@ struct GTA5 : public GameController {
 
 		water_inject = Texture_Injection(water_hash);
 		water_inject.output = std::vector<RenderTargetView>(1);
+
+		ao_inject = Texture_Injection(ShaderHash("395d603b:e3c8ea46:2b8b3309:2054cff5"));
+		ao_inject.output = std::vector<RenderTargetView>(1);
 
 		// cbuffer creation
 		if (!id_buffer) id_buffer = createCBuffer("IDBuffer", sizeof(int));
@@ -377,15 +403,16 @@ struct GTA5 : public GameController {
 				bindCBuffer(id_buffer);
 			}
 			else
-			{
-				id_buffer->set(0);
+			{	
+				id_buffer->set(info.texture_id);
 				bindCBuffer(id_buffer);
 			}
 		}
 
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2 && info.type == DrawInfo::INDEX && info.instances == 0) {
-			bool has_rage_matrices = rage_matrices.has(info.vertex_shader);
 			auto gv = Global_Variable::Instance();
+
+			bool has_rage_matrices = rage_matrices.has(info.vertex_shader);
 			ObjectType type = UNKNOWN;
 			{
 				auto i = object_type.find(info.vertex_shader);
@@ -412,7 +439,10 @@ struct GTA5 : public GameController {
 						float4x4 prev_rage[4] = { rage_mat[0], rage_mat[1], rage_mat[2], rage_mat[3] };
 						mul(&prev_rage[2], rage_mat[0], prev_view_proj);
 						mul(&prev_rage[1], rage_mat[0], prev_view);
-						
+
+						gv->cur_cam.w = info.outputs[0].W;
+						gv->cur_cam.h = info.outputs[0].H;
+
 						gv->cur_cam.g_world = rage_mat[0];
 						gv->cur_cam.g_world_view = rage_mat[1];
 						gv->cur_cam.g_world_view_project = rage_mat[2];
@@ -527,7 +557,9 @@ struct GTA5 : public GameController {
 #pragma endregion camera_matrix
 				}
 			}
-		} else if (main_pass_injection.cur_rendering_state == rendering_state::ready_for_capture) {
+		} 
+
+		else if (main_pass_injection.cur_rendering_state == rendering_state::ready_for_capture) {
 			// End of the main render pass
 			copyTarget("albedo", main_pass_injection.output[0]);
 			copyTarget("normal", main_pass_injection.output[1]);
@@ -545,10 +577,26 @@ struct GTA5 : public GameController {
 			water_inject.cur_rendering_state = rendering_state::second_pass;
 		}
 
+		//if (info.pixel_shader == ao_inject.ps_hash)
+		//{
+		//	ao_inject.output[0] = info.outputs[0];
+		//	ao_inject.cur_rendering_state = rendering_state::ready_for_capture;
+		//}
+		//else if (ao_inject.cur_rendering_state == rendering_state::ready_for_capture)
+		//{
+		//	copyTarget("ao", ao_inject.output[0]);
+		//	ao_inject.cur_rendering_state = rendering_state::second_pass;
+		//}
+
 		return DEFAULT;
 	}
 	virtual void endDraw(const DrawInfo & info) override {
-		
+
+		if (ao_inject.ps_hash == info.pixel_shader)
+		{
+			copyTarget("ao", info.outputs[0]);
+		}
+
 		if (final_shader.count(info.pixel_shader)) {
 			// Draw the final image (right before the image is distorted)
 			copyTarget("final", info.outputs[0]);

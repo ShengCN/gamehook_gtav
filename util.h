@@ -48,7 +48,12 @@ struct Vec3f {
 	bool operator==(const Vec3f & o) const {
 		return x == o.x && y == o.y && z == o.z;
 	}
+
+	Vec3f(float xx, float yy, float zz) :x(xx), y(yy), z(zz) {}
 };
+
+Vec3f operator-(Vec3f a, Vec3f b) { return Vec3f(a.x - b.x, a.y - b.y, a.z - b.z); }
+
 std::string toJSON(const Vec3f & v);
 std::string toJSON(const float4x4 &m);
 struct Quaternion {

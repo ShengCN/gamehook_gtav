@@ -173,6 +173,7 @@
     <ClInclude Include="..\..\SDK\sdk.h" />
     <ClInclude Include="Global_Variable.h" />
     <ClInclude Include="gtastate.h" />
+    <ClInclude Include="ppc.h" />
     <ClInclude Include="scripthook\enums.h" />
     <ClInclude Include="scripthook\main.h" />
     <ClInclude Include="scripthook\nativeCaller.h" />

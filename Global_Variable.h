@@ -1,5 +1,6 @@
 #pragma once
 #include "util.h"
+#include "ppc.h"
 
 class Global_Variable
 {
@@ -14,7 +15,6 @@ public:
 		return _instance;
 	}
 
-private:
 private:
 	Global_Variable() {
 		char tmp[256];
@@ -39,13 +39,11 @@ private:
 
 // Global variables
 public:
-	//int cur_frame_id;
-	//float4x4 cur_g_world;
-	//float4x4 cur_g_world_view;
-	//float4x4 cur_g_world_view_project;
 
-	struct camera_matrix
+	struct camera_info
 	{
+		int w;
+		int h;
 		int frame_id;
 		float4x4 g_world;
 		float4x4 g_world_view;
@@ -63,16 +61,23 @@ public:
 			if (output.is_open())
 			{
 				output << "{";
-				output << "\"g_world\" :" << toJSON(g_world) << ",";
-				output << "\"g_world_view\":" << toJSON(g_world_view) << ",";
-				output << "\"g_world_view_proj\":" << toJSON(g_world_view_project) << ",";
-				output << "\"frame_id\":" << "[" << frame_id << "]";
+				output << variable_name_toJSON("w") << toJSON(w) << ",";
+				output << variable_name_toJSON("h") << toJSON(h) << ",";
+
+				output << variable_name_toJSON("g_world") << toJSON(g_world) << ",";
+				output << variable_name_toJSON("g_world_view") << toJSON(g_world_view) << ",";
+				output << variable_name_toJSON("g_world_view_project") << toJSON(g_world_view_project) << ",";
+				output << variable_name_toJSON("frame_id") << toJSON(frame_id);
 				output << "}";
 			}
 			else
 				LOG(INFO) << "Error when dumping camera matrix";
 
 			output.close();
+		}
+
+		std::string toJSON(int i) {
+			return "[" + std::to_string(i) + "]";
 		}
 
 		std::string toJSON(const float4x4 &m)
@@ -82,8 +87,14 @@ public:
 				+ std::to_string(m.d[2][0]) + "," + std::to_string(m.d[2][1]) + "," + std::to_string(m.d[2][2]) + "," + std::to_string(m.d[2][3]) + ","
 				+ std::to_string(m.d[3][0]) + "," + std::to_string(m.d[3][1]) + "," + std::to_string(m.d[3][2]) + "," + std::to_string(m.d[3][3]) + "]";
 		}
+
+		std::string variable_name_toJSON(std::string name)
+		{
+			return "\"" + name + "\":";
+		}
 	};
 
-	camera_matrix cur_cam;
+	camera_info cur_cam;
+	ppc cur_ppc;					// control camera for distill scene
 	std::string output_folder;
 };

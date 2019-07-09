@@ -1,5 +1,6 @@
 #include "gtastate.h"
 #include "log.h"
+#include "sdk.h"
 #include "scripthook/main.h"
 #include "scripthook/types.h"
 #include "scripthook/enums.h"
