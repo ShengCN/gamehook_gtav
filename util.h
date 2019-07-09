@@ -48,11 +48,9 @@ struct Vec3f {
 	bool operator==(const Vec3f & o) const {
 		return x == o.x && y == o.y && z == o.z;
 	}
-
-	Vec3f(float xx, float yy, float zz) :x(xx), y(yy), z(zz) {}
 };
 
-Vec3f operator-(Vec3f a, Vec3f b) { return Vec3f(a.x - b.x, a.y - b.y, a.z - b.z); }
+inline Vec3f operator-(Vec3f a, Vec3f b) { Vec3f p; p.x = a.x - b.x; p.y = a.y - b.y; p.z = a.z - b.z; return p; }
 
 std::string toJSON(const Vec3f & v);
 std::string toJSON(const float4x4 &m);

@@ -32,10 +32,17 @@ public:
 	}
 
 	Vec3f get_cur_pos(){
-		return Vec3f(_view.d[3][0], _view.d[3][1], _view.d[3][2]);
+		Vec3f p;
+		p.x = _view.d[3][0];
+		p.y = _view.d[3][1];
+		p.z = _view.d[3][2];
+
+
+		return p;
 	}
 
-private:
 	float4x4 _view;
 	float4x4 _proj;
+private:
+	bool is_initialized = false;
 };

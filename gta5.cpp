@@ -99,12 +99,11 @@ struct GTA5 : public GameController {
 			return true;
 		}
 
-		if (key == (unsigned char)KB_Keys::W)
+		if (key == (unsigned char)KB_Keys::Q)
 		{
-			LOG(INFO) << "Pressed W";
-			return false;
+			LOG(INFO) << "Pressed Q";
+			return true;
 		}
-
 		return false;
 	}
 	virtual std::vector<ProvidedTarget> providedTargets() const override {
