@@ -93,17 +93,35 @@ struct GTA5 : public GameController {
 	GTA5() : GameController() {
 	}
 	virtual bool keyDown(unsigned char key, unsigned char special_status) {
-		if (key == (unsigned char)KB_Keys::Q)
+		auto gv = Global_Variable::Instance();
+
+		if (key == (unsigned char)KB_Keys::J)
 		{
-			LOG(INFO) << "Pressed Q";
-			return true;
+			gv->cur_ppc.offset.x -= 1.0;
+
+			LOG(INFO) << "J";
 		}
 
-		if (key == (unsigned char)KB_Keys::Q)
+		if (key == (unsigned char)KB_Keys::K)
 		{
-			LOG(INFO) << "Pressed Q";
-			return true;
+			gv->cur_ppc.offset.y -= 1.0;
+			LOG(INFO) << "K";
+			LOG(INFO) << gv->cur_ppc.offset;
 		}
+
+		if (key == (unsigned char)KB_Keys::L)
+		{
+			gv->cur_ppc.offset.x += 1.0;
+			LOG(INFO) << "L";
+		}
+
+		if (key == (unsigned char)KB_Keys::I)
+		{
+			gv->cur_ppc.offset.y += 1.0;
+			LOG(INFO) << "I";
+		}
+
+		LOG(INFO) << gv->cur_ppc.offset;
 		return false;
 	}
 	virtual std::vector<ProvidedTarget> providedTargets() const override {
@@ -114,11 +132,11 @@ struct GTA5 : public GameController {
 		/*return { { "disparity", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };*/
 		return { {"flow_disp", TargetType::R32G32B32A32_FLOAT, true}, { "flow", TargetType::R32G32_FLOAT}, { "disparity", TargetType::R32_FLOAT },{ "occlusion", TargetType::R32_FLOAT }, { "semantic_out", TargetType::R32_UINT } };
 	}
-	CBufferVariable rage_matrices = { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} },
+	CBufferVariable rage_matrices =    { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} },
 					rage_gWorld_View = { "rage_matrices", "gWorldView", {4 * 16 * sizeof(float)}, {4 * 16 * sizeof(float)} },
 					rage_gWorld_Proj = { "rage_matrices", "gWorldViewProj", {2 * 4 * 16 * sizeof(float)}, {4 * 16 * sizeof(float)} },
-					wheel_matrices = { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, 
-					rage_bonemtx = { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
+					wheel_matrices =   { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, 
+					rage_bonemtx =	   { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
 
 	enum ObjectType {
 		UNKNOWN=0,
@@ -232,7 +250,7 @@ struct GTA5 : public GameController {
 				LOG(INFO) << "Find AO";
 				LOG(INFO) << shader->hash();
 				// ao_inject.ps_hash = shader->hash();
-				ao_set.insert(shader->hash());
+				// ao_set.insert(shader->hash());
 			}
 
 
@@ -293,7 +311,7 @@ struct GTA5 : public GameController {
 	// deferred shading injection, albedo, normal
 	Texture_Injection main_pass_injection = Texture_Injection(); 
 	Texture_Injection water_inject = Texture_Injection(water_hash);
-	Texture_Injection ao_inject = Texture_Injection(ShaderHash("395d603b:e3c8ea46:2b8b3309:2054cff5"));
+	//Texture_Injection ao_inject = Texture_Injection(ShaderHash("395d603b:e3c8ea46:2b8b3309:2054cff5"));
 
 	// #cbuffer
 	std::shared_ptr<CBuffer> id_buffer, prev_buffer, prev_wheel_buffer, prev_rage_bonemtx, disparity_correction;
@@ -318,8 +336,8 @@ struct GTA5 : public GameController {
 		water_inject = Texture_Injection(water_hash);
 		water_inject.output = std::vector<RenderTargetView>(1);
 
-		ao_inject = Texture_Injection(ShaderHash("395d603b:e3c8ea46:2b8b3309:2054cff5"));
-		ao_inject.output = std::vector<RenderTargetView>(1);
+		//ao_inject = Texture_Injection(ShaderHash("395d603b:e3c8ea46:2b8b3309:2054cff5"));
+		//ao_inject.output = std::vector<RenderTargetView>(1);
 
 		// cbuffer creation
 		if (!id_buffer) id_buffer = createCBuffer("IDBuffer", sizeof(int));
@@ -371,9 +389,11 @@ struct GTA5 : public GameController {
 			info.instances == 0;
 	}
 
+	int counter_tt = 0;
 	// #draw_function
 	virtual DrawType startDraw(const DrawInfo & info) override {
-		
+		// First time initialize ppc
+
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2) 
 		{
 			if (tree_hash_sets.count(info.pixel_shader))
@@ -591,10 +611,10 @@ struct GTA5 : public GameController {
 	}
 	virtual void endDraw(const DrawInfo & info) override {
 
-		if (ao_inject.ps_hash == info.pixel_shader)
-		{
-			copyTarget("ao", info.outputs[0]);
-		}
+		//if (ao_inject.ps_hash == info.pixel_shader)
+		//{
+		//	copyTarget("ao", info.outputs[0]);
+		//}
 
 		if (final_shader.count(info.pixel_shader)) {
 			// Draw the final image (right before the image is distorted)
