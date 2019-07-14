@@ -19,7 +19,7 @@ void main(in float4 p: SV_POSITION, in float2 t : TEX_COORD, out float2 flow : S
 	float4 f = flow_disp.Load(int3(x, y, 0));
 
 	// Get the prior disparity
-	disparity = disp_a*(f.w+disp_b);
+	disparity = disp_a*(f.w + disp_b);
 	occlusion = 0. / 0.; // NaN
 	flow = 0. / 0.; // NaN
 }

@@ -1,6 +1,5 @@
 #pragma once
 #include "util.h"
-#include "ppc.h"
 
 class Global_Variable
 {
@@ -39,7 +38,7 @@ private:
 
 // Global variables
 public:
-
+	bool is_recording = false;
 	struct camera_info
 	{
 		int w;
@@ -95,6 +94,5 @@ public:
 	};
 
 	camera_info cur_cam;
-	ppc cur_ppc;					// control camera for distill scene
 	std::string output_folder;
 };

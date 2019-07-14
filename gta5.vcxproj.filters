@@ -55,9 +55,6 @@
     <ClInclude Include="Global_Variable.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ppc.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="ps_output.hlsl">

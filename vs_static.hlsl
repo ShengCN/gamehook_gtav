@@ -4,4 +4,5 @@ cbuffer prev_rage_matrices: register(b0) {
 
 void main(in float3 pos: POSITION, out float4 prev_pos : PREV_POSITION) {
 	prev_pos = mul(float4(pos, 1), prev_worldViewProj);
+	// prev_pos = float4(pos, 1.0);
 }

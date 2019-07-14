@@ -97,31 +97,9 @@ struct GTA5 : public GameController {
 
 		if (key == (unsigned char)KB_Keys::J)
 		{
-			gv->cur_ppc.offset.x -= 1.0;
-
-			LOG(INFO) << "J";
+			gv->is_recording = gv->is_recording ^ 1;
 		}
 
-		if (key == (unsigned char)KB_Keys::K)
-		{
-			gv->cur_ppc.offset.y -= 1.0;
-			LOG(INFO) << "K";
-			LOG(INFO) << gv->cur_ppc.offset;
-		}
-
-		if (key == (unsigned char)KB_Keys::L)
-		{
-			gv->cur_ppc.offset.x += 1.0;
-			LOG(INFO) << "L";
-		}
-
-		if (key == (unsigned char)KB_Keys::I)
-		{
-			gv->cur_ppc.offset.y += 1.0;
-			LOG(INFO) << "I";
-		}
-
-		LOG(INFO) << gv->cur_ppc.offset;
 		return false;
 	}
 	virtual std::vector<ProvidedTarget> providedTargets() const override {
@@ -130,7 +108,7 @@ struct GTA5 : public GameController {
 	virtual std::vector<ProvidedTarget> providedCustomTargets() const {
 		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
 		/*return { { "disparity", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };*/
-		return { {"flow_disp", TargetType::R32G32B32A32_FLOAT, true}, { "flow", TargetType::R32G32_FLOAT}, { "disparity", TargetType::R32_FLOAT },{ "occlusion", TargetType::R32_FLOAT }, { "semantic_out", TargetType::R32_UINT } };
+		return { {"flow_disp", TargetType::R32G32B32A32_FLOAT, true}, { "flow", TargetType::R32G32_FLOAT}, { "disparity", TargetType::R32_FLOAT },{ "occlusion", TargetType::R32_FLOAT }, { "semantic_out", TargetType::R32_UINT }};
 	}
 	CBufferVariable rage_matrices =    { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} },
 					rage_gWorld_View = { "rage_matrices", "gWorldView", {4 * 16 * sizeof(float)}, {4 * 16 * sizeof(float)} },
@@ -154,7 +132,7 @@ struct GTA5 : public GameController {
 	// #create_injection_shaders
 	std::shared_ptr<Shader> vs_static_shader	= Shader::create(ByteCode(VS_STATIC,	VS_STATIC + sizeof(VS_STATIC))),
 							ps_output_shader	= Shader::create(ByteCode(PS_OUTPUT,	PS_OUTPUT + sizeof(PS_OUTPUT)),		{ { "SV_Target6", "flow_disp" }, { "SV_Target7", "semantic_out" } }),
-							flow_shader			= Shader::create(ByteCode(PS_FLOW,		PS_FLOW + sizeof(PS_FLOW)),			{ { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } }),
+		flow_shader = Shader::create(ByteCode(PS_FLOW, PS_FLOW + sizeof(PS_FLOW)), { { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" }}),
 							noflow_shader		= Shader::create(ByteCode(PS_NOFLOW,	PS_NOFLOW + sizeof(PS_NOFLOW)),		{ { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } });
 
 	std::unordered_set<ShaderHash> int_position = 
@@ -198,8 +176,8 @@ struct GTA5 : public GameController {
 				for (const auto & b : shader->cbuffers())
 					if (b.bind_point == 0)
 						can_inject = false;
-				if (int_position.count(shader->hash()))
-					can_inject = false;
+				//if (int_position.count(shader->hash()))
+				//	can_inject = false;
 				if (can_inject) {
 					// Duplicate the shader and copy rage matrices
 					auto r = shader->subset({ "SV_Position" });
@@ -393,6 +371,7 @@ struct GTA5 : public GameController {
 	// #draw_function
 	virtual DrawType startDraw(const DrawInfo & info) override {
 		// First time initialize ppc
+		auto gv = Global_Variable::Instance();
 
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2) 
 		{
@@ -429,7 +408,6 @@ struct GTA5 : public GameController {
 		}
 
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2 && info.type == DrawInfo::INDEX && info.instances == 0) {
-			auto gv = Global_Variable::Instance();
 
 			bool has_rage_matrices = rage_matrices.has(info.vertex_shader);
 			ObjectType type = UNKNOWN;
@@ -627,6 +605,12 @@ struct GTA5 : public GameController {
 		return "";
 	}
 	virtual bool stop() { return stopTracker(); }
+
+	virtual RecordingType recordFrame(uint32_t frame_id) override {
+		auto gv = Global_Variable::Instance();
+		
+		return gv->is_recording ? RecordingType::DRAW : RecordingType::NONE;
+	}
 };
 REGISTER_CONTROLLER(GTA5);
 
