@@ -41,22 +41,22 @@ struct Tracker {
 		std::lock_guard<std::mutex> lock(is_tracking);
 		uint64_t delta = current_id - returned_id;
 		if (delta > 0) {
-			for (int i = 0; i < N_OBJECTS; i++) {
-				if (returned.objects[i].id == current.objects[i].id) {
-					returned.objects[i].age = current.objects[i].age = returned.objects[i].age + (uint32_t)delta;
-					returned.objects[i].p = current.objects[i].p;
-					returned.objects[i].q = current.objects[i].q;
-					// Let's associate the private data with the returned object only [no swapping here]
-				} else if (current.objects[i].id) {
-					returned.objects[i] = current.objects[i];
-				} else if (returned.objects[i].id) {
-					returned.objects[i].id = 0;
-					returned.objects[i].private_data.reset();
-				}
-			}
-			returned.object_map.swap(current.object_map);
-			returned.info = current.info;
-			returned_id = current_id;
+			//for (int i = 0; i < N_OBJECTS; i++) {
+			//	if (returned.objects[i].id == current.objects[i].id) {
+			//		returned.objects[i].age = current.objects[i].age = returned.objects[i].age + (uint32_t)delta;
+			//		returned.objects[i].p = current.objects[i].p;
+			//		returned.objects[i].q = current.objects[i].q;
+			//		// Let's associate the private data with the returned object only [no swapping here]
+			//	} else if (current.objects[i].id) {
+			//		returned.objects[i] = current.objects[i];
+			//	} else if (returned.objects[i].id) {
+			//		returned.objects[i].id = 0;
+			//		returned.objects[i].private_data.reset();
+			//	}
+			//}
+			//returned.object_map.swap(current.object_map);
+			//returned.info = current.info;
+			//returned_id = current_id;
 		}
 		return &returned;
 	}
@@ -118,44 +118,12 @@ inline Vec3f Vector3_2_Vec3f(Vector3 v)
 
 // #json_track_fetch
 void TrackedFrame::fetch() {
-	static std::mutex fetching;
-	std::lock_guard<std::mutex> lock(fetching);
-
-	static int entity_buf[1 << 14];
+	//static std::mutex fetching;
+	//std::lock_guard<std::mutex> lock(fetching);
 
 	// Clear the tracker
-	object_map.clear();
-	for (int i = 0; i < N_OBJECTS; i++)
-		objects[i].id = 0;
+	// object_map.clear();
 
-	// Track all new objects
-	typedef int(*WorldGet)(int*, int);
-	WorldGet worldGet[] = { &worldGetAllPeds , &worldGetAllObjects , &worldGetAllPickups, &worldGetAllVehicles };
-	ObjectType type[] = { PED, OBJECT, PICKUP, VEHICLE };
-	Entity player_ped = PLAYER::PLAYER_PED_ID();
-	for (int it = 0; it * sizeof(type[0]) < sizeof(type); it++) {
-		int n = worldGet[it](entity_buf, sizeof(entity_buf) / sizeof(entity_buf[0]));
-		ObjectType t = type[it];
-		for (int i = 0; i < n; i++) {
-			const int e = entity_buf[i];
-			Quaternion q;
-			ENTITY::GET_ENTITY_QUATERNION(e, &q.x, &q.y, &q.z, &q.w);
-			Vector3 p = ENTITY::GET_OFFSET_FROM_ENTITY_IN_WORLD_COORDS(e, 0.0, 0.0, 0.0);
-
-			// Add the entry
-			uint32_t k = (e >> 8) & (N_OBJECTS/2 - 1);
-			if (objects[k].id)
-				LOG(WARN) << "Tracker has duplicate objects";
-			objects[k] = { ID(e, e == player_ped ? ObjectType::PLAYER : t), 0, {p.x, p.y, p.z}, q, nullptr };
-			object_map.insert({ objects[k].p.x, objects[k].p.y }, k);
-			if (t == PED) { // Track the head gear
-				Vector3 hp = PED::GET_PED_BONE_COORDS(e, SKEL_Head, 0.0, 0.0, 0.0);
-				uint32_t kk = k + N_OBJECTS/2;
-				objects[kk] = { objects[k].id, 0,{ hp.x, hp.y, hp.z }, {0,0,0,0}, nullptr };
-				object_map.insert({ objects[kk].p.x, objects[kk].p.y }, kk);
-			}
-		}
-	}
 	Player p = PLAYER::PLAYER_ID();
 	Ped pp = PLAYER::PLAYER_PED_ID();
 

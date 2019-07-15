@@ -38,7 +38,6 @@ private:
 
 // Global variables
 public:
-	bool is_recording = false;
 	struct camera_info
 	{
 		int w;
@@ -95,4 +94,8 @@ public:
 
 	camera_info cur_cam;
 	std::string output_folder;
+	bool is_record = false;
+	Vector3 last_pos;
+	int wait_counter = 120; // wait for about 2 seconds
+	int time_counter = 0;
 };

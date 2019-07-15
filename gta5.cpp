@@ -94,10 +94,18 @@ struct GTA5 : public GameController {
 	}
 	virtual bool keyDown(unsigned char key, unsigned char special_status) {
 		auto gv = Global_Variable::Instance();
-
-		if (key == (unsigned char)KB_Keys::J)
-		{
-			gv->is_recording = gv->is_recording ^ 1;
+		// control if begin 
+		if (key == KB_Keys::J) {
+			
+			if (gv->is_record) {
+				LOG(INFO) << "Stop recording";
+				gv->is_record = false;
+			}
+			else {
+				gv->is_record = true;
+				LOG(INFO) << "Begin recording";
+			}
+			
 		}
 
 		return false;
@@ -600,16 +608,72 @@ struct GTA5 : public GameController {
 		}
 	}
 	virtual std::string gameState() const override {
-		if (tracker)
+		if (tracker && currentRecordingType() == RecordingType::DRAW)
 			return toJSON(tracker->info);
 		return "";
 	}
 	virtual bool stop() { return stopTracker(); }
 
+	double last_recorded_frame = 0, frame_timestamp = 0;
+	float fps = 0.5;
+	std::mutex get_cam;
 	virtual RecordingType recordFrame(uint32_t frame_id) override {
 		auto gv = Global_Variable::Instance();
-		
-		return gv->is_recording ? RecordingType::DRAW : RecordingType::NONE;
+		if (gv->is_record) {
+
+			frame_timestamp = time();
+			if ((frame_timestamp - last_recorded_frame) * fps >= 1) {
+				bool is_need_wait = true;
+				Vector3 position;
+				{
+					std::lock_guard<std::mutex> lock(get_cam);
+
+					if (CAM::IS_GAMEPLAY_CAM_RENDERING()) {
+						position = CAM::GET_GAMEPLAY_CAM_COORD();
+					}
+					else {
+						Any cur_camera = CAM::GET_RENDERING_CAM();
+						// camera parameters
+						position = CAM::GET_CAM_COORD(cur_camera);
+					}
+				}
+
+				float diff_x = gv->last_pos.x - position.x;
+				float diff_y = gv->last_pos.y - position.y;
+				float diff_z = gv->last_pos.z - position.z;
+
+				float diff = std::sqrt(diff_x * diff_x + diff_y * diff_y + diff_z * diff_z);
+				gv->last_pos = position;
+
+				if (diff > 50.0f) {
+					LOG(INFO) << diff << "Distances between frames are too large, wait to loading...";
+					gv->time_counter = 0;
+				}
+				else if (gv->time_counter < gv->wait_counter) {
+					gv->time_counter++;
+				}
+				else {
+					is_need_wait = false;
+				}
+
+				// do a check for game loading
+				if (is_need_wait) {
+					return RecordingType::NONE;
+				}
+				else {
+					last_recorded_frame = frame_timestamp;
+					return RecordingType::DRAW;
+				}
+
+			}
+			else {
+				return RecordingType::NONE;
+			}
+			
+			
+		}
+
+		return RecordingType::NONE;
 	}
 };
 REGISTER_CONTROLLER(GTA5);
