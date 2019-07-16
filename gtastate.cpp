@@ -41,22 +41,8 @@ struct Tracker {
 		std::lock_guard<std::mutex> lock(is_tracking);
 		uint64_t delta = current_id - returned_id;
 		if (delta > 0) {
-			//for (int i = 0; i < N_OBJECTS; i++) {
-			//	if (returned.objects[i].id == current.objects[i].id) {
-			//		returned.objects[i].age = current.objects[i].age = returned.objects[i].age + (uint32_t)delta;
-			//		returned.objects[i].p = current.objects[i].p;
-			//		returned.objects[i].q = current.objects[i].q;
-			//		// Let's associate the private data with the returned object only [no swapping here]
-			//	} else if (current.objects[i].id) {
-			//		returned.objects[i] = current.objects[i];
-			//	} else if (returned.objects[i].id) {
-			//		returned.objects[i].id = 0;
-			//		returned.objects[i].private_data.reset();
-			//	}
-			//}
-			//returned.object_map.swap(current.object_map);
-			//returned.info = current.info;
-			//returned_id = current_id;
+			returned.info = current.info;
+			returned_id = current_id;
 		}
 		return &returned;
 	}
@@ -118,8 +104,8 @@ inline Vec3f Vector3_2_Vec3f(Vector3 v)
 
 // #json_track_fetch
 void TrackedFrame::fetch() {
-	//static std::mutex fetching;
-	//std::lock_guard<std::mutex> lock(fetching);
+	static std::mutex fetching;
+	std::lock_guard<std::mutex> lock(fetching);
 
 	// Clear the tracker
 	// object_map.clear();

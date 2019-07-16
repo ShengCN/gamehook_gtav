@@ -16,6 +16,7 @@
 #include "vs_static.h"
 #include "ps_flow.h"
 #include "ps_noflow.h"
+#include "ps_cable.h"
 #include "Global_Variable.h"
 
 uint32_t MAX_UNTRACKED_OBJECT_ID = 1 << 14;
@@ -111,18 +112,26 @@ struct GTA5 : public GameController {
 		return false;
 	}
 	virtual std::vector<ProvidedTarget> providedTargets() const override {
-		return { {"albedo"}, {"normal"},{"final"}, {"water"}, { "prev_disp", TargetType::R32_FLOAT, true }, {"ao", TargetType::R8_UNORM} };
+		return { {"albedo"}, {"normal"},{"final"}, {"water"}, { "prev_disp", TargetType::R32_FLOAT, true }};
 	}
 	virtual std::vector<ProvidedTarget> providedCustomTargets() const {
 		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
-		/*return { { "disparity", TargetType::R32_FLOAT }, { "object_id", TargetType::R32_UINT } };*/
-		return { {"flow_disp", TargetType::R32G32B32A32_FLOAT, true}, { "flow", TargetType::R32G32_FLOAT}, { "disparity", TargetType::R32_FLOAT },{ "occlusion", TargetType::R32_FLOAT }, { "semantic_out", TargetType::R32_UINT }};
+		return { { "flow_disp", TargetType::R32G32B32A32_FLOAT, true},
+				 { "flow", TargetType::R32G32_FLOAT},
+				 { "disparity", TargetType::R32_FLOAT },
+				 { "occlusion", TargetType::R32_FLOAT },
+				 { "semantic_out", TargetType::R32_UINT },
+				 { "cable_disparity", TargetType::R32_FLOAT},
+				 { "cable", TargetType::R32_UINT}
+		};
 	}
-	CBufferVariable rage_matrices =    { "rage_matrices", "gWorld", {0}, {4*16*sizeof(float)} },
-					rage_gWorld_View = { "rage_matrices", "gWorldView", {4 * 16 * sizeof(float)}, {4 * 16 * sizeof(float)} },
-					rage_gWorld_Proj = { "rage_matrices", "gWorldViewProj", {2 * 4 * 16 * sizeof(float)}, {4 * 16 * sizeof(float)} },
-					wheel_matrices =   { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } }, 
-					rage_bonemtx =	   { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } };
+
+	CBufferVariable rage_matrices = { "rage_matrices", "gWorld", {0}, {4 * 16 * sizeof(float)} },
+		rage_gWorld_View = { "rage_matrices", "gWorldView", {4 * 16 * sizeof(float)}, {4 * 16 * sizeof(float)} },
+		rage_gWorld_Proj = { "rage_matrices", "gWorldViewProj", {2 * 4 * 16 * sizeof(float)}, {4 * 16 * sizeof(float)} },
+		wheel_matrices = { "matWheelBuffer", "matWheelWorld",{ 0 },{ 32 * sizeof(float) } },
+		rage_bonemtx = { "rage_bonemtx", "gBoneMtx",{ 0 },{ BONE_MTX_SIZE } },
+		cable_locals = { "cable_locals", "shader_radiusScale", {0}, {sizeof(float)} };
 
 	enum ObjectType {
 		UNKNOWN=0,
@@ -138,10 +147,11 @@ struct GTA5 : public GameController {
 	std::unordered_set<ShaderHash> water_shader;
 
 	// #create_injection_shaders
-	std::shared_ptr<Shader> vs_static_shader	= Shader::create(ByteCode(VS_STATIC,	VS_STATIC + sizeof(VS_STATIC))),
-							ps_output_shader	= Shader::create(ByteCode(PS_OUTPUT,	PS_OUTPUT + sizeof(PS_OUTPUT)),		{ { "SV_Target6", "flow_disp" }, { "SV_Target7", "semantic_out" } }),
-		flow_shader = Shader::create(ByteCode(PS_FLOW, PS_FLOW + sizeof(PS_FLOW)), { { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" }}),
-							noflow_shader		= Shader::create(ByteCode(PS_NOFLOW,	PS_NOFLOW + sizeof(PS_NOFLOW)),		{ { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } });
+	std::shared_ptr<Shader> vs_static_shader = Shader::create(ByteCode(VS_STATIC, VS_STATIC + sizeof(VS_STATIC))),
+		ps_output_shader = Shader::create(ByteCode(PS_OUTPUT, PS_OUTPUT + sizeof(PS_OUTPUT)), { { "SV_Target6", "flow_disp" }, { "SV_Target7", "semantic_out" } }),
+		ps_cable_shader = Shader::create(ByteCode(PS_CABLE, PS_CABLE + sizeof(PS_CABLE)), { {"SV_Target6", "cable_disparity"}, {"SV_Target7", "cable"} }),
+		flow_shader = Shader::create(ByteCode(PS_FLOW, PS_FLOW + sizeof(PS_FLOW)), { { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } }),
+		noflow_shader = Shader::create(ByteCode(PS_NOFLOW, PS_NOFLOW + sizeof(PS_NOFLOW)), { { "SV_Target0", "flow" },{ "SV_Target1", "disparity" },{ "SV_Target2", "occlusion" } });
 
 	std::unordered_set<ShaderHash> int_position = 
 	{ 
@@ -160,10 +170,19 @@ struct GTA5 : public GameController {
 	std::unordered_set<ShaderHash> terrain_hash_sets;
 	std::unordered_set<ShaderHash> ped_hash_sets;
 	std::unordered_set<ShaderHash> vehicle_hash_sets;
+	std::unordered_set<ShaderHash> cable_sets;
 
 	// #inject_shaders
 	virtual std::shared_ptr<Shader> injectShader(std::shared_ptr<Shader> shader) {
 		if (shader->type() == Shader::VERTEX) {
+			bool has_cable = cable_locals.scan(shader);
+			if(has_cable) {
+				LOG(INFO) << "Find cable vertex";
+				auto r = shader->subset({ "SV_Position" });
+				r->renameOutput("SV_Position", "DUP_Position");
+				return r;
+			}
+
 			bool has_rage_matrices = rage_matrices.scan(shader);
 			if (has_rage_matrices) {
 				bool has_wheel = wheel_matrices.scan(shader);
@@ -231,14 +250,10 @@ struct GTA5 : public GameController {
 				road_hash_sets.insert(shader->hash());
 			}
 
-			if (hasTexture(shader, "gDeferredLightSampler0P") && hasTexture(shader, "PointSampler2"))
-			{
-				LOG(INFO) << "Find AO";
-				LOG(INFO) << shader->hash();
-				// ao_inject.ps_hash = shader->hash();
-				// ao_set.insert(shader->hash());
+			if (containsCBuffer(shader, "cable")) {
+				LOG(INFO) << "Find cable " << shader->hash();
+				cable_sets.insert(shader->hash());
 			}
-
 
 			// prior to v1.0.1365.1
 			if (hasTexture(shader, "BackBufferTexture")) {
@@ -248,6 +263,12 @@ struct GTA5 : public GameController {
 			if (hasTexture(shader, "SSLRSampler") && hasTexture(shader, "HDRSampler")) {
 				// Other candidate textures include "MotionBlurSampler", "BlurSampler", but might depend on graphics settings
 				final_shader.insert(shader->hash());
+			}
+
+			if (hasCBuffer(shader, "cable_locals")) {
+				// Inject cable shaders
+				LOG(INFO) << "Inject into cable shaders";
+				return ps_cable_shader;
 			}
 
 			if (hasCBuffer(shader, "misc_globals")) {
@@ -297,10 +318,9 @@ struct GTA5 : public GameController {
 	// deferred shading injection, albedo, normal
 	Texture_Injection main_pass_injection = Texture_Injection(); 
 	Texture_Injection water_inject = Texture_Injection(water_hash);
-	//Texture_Injection ao_inject = Texture_Injection(ShaderHash("395d603b:e3c8ea46:2b8b3309:2054cff5"));
 
 	// #cbuffer
-	std::shared_ptr<CBuffer> id_buffer, prev_buffer, prev_wheel_buffer, prev_rage_bonemtx, disparity_correction;
+	std::shared_ptr<CBuffer> id_buffer, cable_buffer, prev_buffer, prev_wheel_buffer, prev_rage_bonemtx, disparity_correction;
 	TrackedFrame * tracker = nullptr;
 	std::shared_ptr<TrackData> last_vehicle;
 
@@ -322,11 +342,10 @@ struct GTA5 : public GameController {
 		water_inject = Texture_Injection(water_hash);
 		water_inject.output = std::vector<RenderTargetView>(1);
 
-		//ao_inject = Texture_Injection(ShaderHash("395d603b:e3c8ea46:2b8b3309:2054cff5"));
-		//ao_inject.output = std::vector<RenderTargetView>(1);
-
 		// cbuffer creation
 		if (!id_buffer) id_buffer = createCBuffer("IDBuffer", sizeof(int));
+		// if (!cable_buffer) cable_buffer = createCBuffer("CableBuffer", sizeof(int));
+
 		if (!cur_rage_buffer) cur_rage_buffer = createCBuffer("rage_matrices", 4 * sizeof(float4x4));
 		if (!prev_buffer) prev_buffer = createCBuffer("prev_rage_matrices", 4*sizeof(float4x4));
 		if (!prev_wheel_buffer) prev_wheel_buffer = createCBuffer("prev_matWheelBuffer", 4 * sizeof(float4x4));
@@ -363,16 +382,32 @@ struct GTA5 : public GameController {
 		}
 	}
 
-	// #condition_check
-	bool is_info_vertice(const DrawInfo & info)
-	{
-		return 	(currentRecordingType() != NONE) &&
-			info.outputs.size() &&
-			info.outputs[0].W == defaultWidth() &&
-			info.outputs[0].H == defaultHeight() &&
-			info.outputs.size() >= 2 &&
-			info.type == DrawInfo::INDEX &&
-			info.instances == 0;
+	void set_semantic_buffer(const DrawInfo& info) {
+		if (tree_hash_sets.count(info.pixel_shader))
+		{
+			id_buffer->set(256);
+			bindCBuffer(id_buffer);
+		}
+		else if (vehicle_hash_sets.count(info.pixel_shader))
+		{
+			id_buffer->set(64);
+			bindCBuffer(id_buffer);
+		}
+		else if (terrain_hash_sets.count(info.pixel_shader))
+		{
+			id_buffer->set(32);
+			bindCBuffer(id_buffer);
+		}
+		else if (road_hash_sets.count(info.pixel_shader))
+		{
+			id_buffer->set(16);
+			bindCBuffer(id_buffer);
+		}
+		else
+		{
+			id_buffer->set(info.texture_id);
+			bindCBuffer(id_buffer);
+		}
 	}
 
 	int counter_tt = 0;
@@ -381,41 +416,10 @@ struct GTA5 : public GameController {
 		// First time initialize ppc
 		auto gv = Global_Variable::Instance();
 
-		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2) 
-		{
-			if (tree_hash_sets.count(info.pixel_shader))
-			{
-				id_buffer->set(256);
-				bindCBuffer(id_buffer);
-			}
-			else if (ped_hash_sets.count(info.pixel_shader))
-			{
-				id_buffer->set(info.texture_id);
-				bindCBuffer(id_buffer);
-			}
-			else if (vehicle_hash_sets.count(info.pixel_shader))
-			{
-				id_buffer->set(64);
-				bindCBuffer(id_buffer);
-			}
-			else if (terrain_hash_sets.count(info.pixel_shader))
-			{
-				id_buffer->set(32);
-				bindCBuffer(id_buffer);
-			}
-			else if (road_hash_sets.count(info.pixel_shader))
-			{
-				id_buffer->set(16);
-				bindCBuffer(id_buffer);
-			}
-			else
-			{	
-				id_buffer->set(info.texture_id);
-				bindCBuffer(id_buffer);
-			}
-		}
+		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2 
+			&& info.type == DrawInfo::INDEX && info.instances == 0 && !cable_sets.count(info.pixel_shader)) {
 
-		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight() && info.outputs.size() >= 2 && info.type == DrawInfo::INDEX && info.instances == 0) {
+			set_semantic_buffer(info);
 
 			bool has_rage_matrices = rage_matrices.has(info.vertex_shader);
 			ObjectType type = UNKNOWN;
@@ -426,7 +430,6 @@ struct GTA5 : public GameController {
 			}
 			if (has_rage_matrices && main_pass_injection.cur_rendering_state != rendering_state::second_pass) {
 				std::shared_ptr<GPUMemory> wp = rage_matrices.fetch(this, info.vertex_shader, info.vs_cbuffers, true);
-
 
 				if (main_pass_injection.cur_rendering_state == rendering_state::first_pass) {
 					// Starting the main render pass
@@ -441,9 +444,6 @@ struct GTA5 : public GameController {
 					if (wp && wp->size() >= 3 * sizeof(float4x4)) {
 						// Fetch the rage matrices gWorld, gWorldView, gWorldViewProj
 						const float4x4 * rage_mat = (const float4x4 *)wp->data();
-						float4x4 prev_rage[4] = { rage_mat[0], rage_mat[1], rage_mat[2], rage_mat[3] };
-						mul(&prev_rage[2], rage_mat[0], prev_view_proj);
-						mul(&prev_rage[1], rage_mat[0], prev_view);
 
 						gv->cur_cam.w = info.outputs[0].W;
 						gv->cur_cam.h = info.outputs[0].H;
@@ -452,119 +452,15 @@ struct GTA5 : public GameController {
 						gv->cur_cam.g_world_view = rage_mat[1];
 						gv->cur_cam.g_world_view_project = rage_mat[2];
 
-						// Sum up the world and world_view_proj matrices to later compute the view_proj matrix
-						if (type != PEDESTRIAN && type != PLAYER) {
-							// There is a 'BUG' (or feature) in GTA V that doesn't draw Franklyn correctly in first person view (rage_mat are wrong)
-							add(&avg_world, avg_world, rage_mat[0]);
-							add(&avg_world_view, avg_world_view, rage_mat[1]);
-							add(&avg_world_view_proj, avg_world_view_proj, rage_mat[2]);
-						}
-
-						if (type == WHEEL && last_vehicle) {
-							std::shared_ptr<GPUMemory> wm = wheel_matrices.fetch(this, info.vertex_shader, info.vs_cbuffers, true);
-							if (wm && wm->size() >= 2 * sizeof(float4x4)) {
-								if (last_vehicle->cur_wheels.size() <= wheel_count)
-									last_vehicle->cur_wheels.resize(wheel_count + 1);
-								memcpy(&last_vehicle->cur_wheels[wheel_count], wm->data(), sizeof(TrackData::WheelData));
-
-								// Set the previous wheel matrix
-								if (wheel_count < last_vehicle->prev_wheels.size())
-									prev_wheel_buffer->set(last_vehicle->prev_wheels[wheel_count]);
-								else
-									prev_wheel_buffer->set(last_vehicle->cur_wheels[wheel_count]);
-								bindCBuffer(prev_wheel_buffer);
-							}
-							id = last_vehicle->id;
-							wheel_count++;
-						} else if (tracker) {
-							// Determine the GTA type for search
-							TrackedFrame::ObjectType gta_type = TrackedFrame::UNKNOWN;
-							if (type == PEDESTRIAN) gta_type = TrackedFrame::PED;
-							if (type == VEHICLE) gta_type = TrackedFrame::VEHICLE;
-
-							Vec3f v = { rage_mat[0].d[3][0], rage_mat[0].d[3][1], rage_mat[0].d[3][2] };
-							
-
-							TrackedFrame::Object * object;
-							// A tighter radius for unknown objects
-							if (gta_type == TrackedFrame::UNKNOWN) object = (*tracker)(v, Quaternion::fromMatrix(rage_mat[0]), 0.01f, 0.01f, gta_type);
-							else if (gta_type == TrackedFrame::PED) object = (*tracker)(v, Quaternion::fromMatrix(rage_mat[0]), 1.f, 10.f, gta_type);
-							else object = (*tracker)(v, Quaternion::fromMatrix(rage_mat[0]), 0.1f, 0.1f, TrackedFrame::UNKNOWN);
-
-							if (object) {
-								std::shared_ptr<TrackData> track = std::dynamic_pointer_cast<TrackData>(object->private_data);
-								if (!track) // Create a track if the object is new
-									object->private_data = track = std::make_shared<TrackData>();
-								if (object->type() == TrackedFrame::PLAYER) type = PLAYER;
-								// Advance a tracked frame
-								if (track->last_frame < current_frame_id) {
-
-									// Advance time
-									track->swap();
-
-									// Update the rage matrix
-									memcpy(track->cur_rage, rage_mat, sizeof(track->cur_rage));
-									track->has_cur_rage = 1;
-
-									if (track->last_frame != current_frame_id - 1) {
-										// Avoid objects poping in and out
-										track->has_prev_rage = 0;
-										track->prev_bones.clear();
-										track->prev_wheels.clear();
-									}
-									track->last_frame = current_frame_id;
-								}
-								// Update the bone_mtx
-								if (type == PEDESTRIAN || type == BONE_MTX) {
-									std::shared_ptr<GPUMemory> bm = rage_bonemtx.fetch(this, info.vertex_shader, info.vs_cbuffers, true);
-									if (bm) {
-										if (!track->cur_bones.count(info.vertex_buffer.id)) {
-											memcpy(&track->cur_bones[info.vertex_buffer.id], bm->data(), sizeof(TrackData::BoneData));
-											TS += sizeof(TrackData::BoneData);
-										} else if (0) {
-											if (memcmp(&track->cur_bones[info.vertex_buffer.id], bm->data(), sizeof(TrackData::BoneData))) {
-												LOG(WARN) << "Bone matrix changed for object " << info.pixel_shader << " " << info.vertex_shader << " " << info.vertex_buffer.id;
-												LOG(INFO) << object->type() << " " << object->id;
-												return HIDE;
-											}
-										}
-									}
-								}
-								// Set the prior projection view
-								if (track->has_prev_rage)
-									memcpy(prev_rage, &track->prev_rage, sizeof(prev_rage));
-
-								// Set the prior bone mtx
-								if (type == PEDESTRIAN || type == BONE_MTX) {
-									if (track->prev_bones.count(info.vertex_buffer.id))
-										prev_rage_bonemtx->set(track->prev_bones[info.vertex_buffer.id]);
-									else if (track->cur_bones.count(info.vertex_buffer.id))
-										prev_rage_bonemtx->set(track->cur_bones[info.vertex_buffer.id]);
-									bindCBuffer(prev_rage_bonemtx);
-								}
-
-								track->id = id = MAX_UNTRACKED_OBJECT_ID + object->id;
-								if (type == VEHICLE) {
-									last_vehicle = track;
-									wheel_count = 0;
-								}
-							}
-							else if (type == PEDESTRIAN) {
-								return HIDE;
-							}
-						}
-
-						prev_buffer->set((float4x4*)prev_rage, 4, 0);
-						bindCBuffer(prev_buffer);
+						//prev_buffer->set((float4x4*)prev_rage, 4, 0);
+						//bindCBuffer(prev_buffer);
 						
 						return RIGID;
 					}
 #pragma endregion camera_matrix
 				}
 			}
-		} 
-
-		else if (main_pass_injection.cur_rendering_state == rendering_state::ready_for_capture) {
+		} else if (main_pass_injection.cur_rendering_state == rendering_state::ready_for_capture) {
 			// End of the main render pass
 			copyTarget("albedo", main_pass_injection.output[0]);
 			copyTarget("normal", main_pass_injection.output[1]);
@@ -582,25 +478,19 @@ struct GTA5 : public GameController {
 			water_inject.cur_rendering_state = rendering_state::second_pass;
 		}
 
-		//if (info.pixel_shader == ao_inject.ps_hash)
-		//{
-		//	ao_inject.output[0] = info.outputs[0];
-		//	ao_inject.cur_rendering_state = rendering_state::ready_for_capture;
-		//}
-		//else if (ao_inject.cur_rendering_state == rendering_state::ready_for_capture)
-		//{
-		//	copyTarget("ao", ao_inject.output[0]);
-		//	ao_inject.cur_rendering_state = rendering_state::second_pass;
-		//}
+
+		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight()) {
+			if (cable_sets.count(info.pixel_shader)) {
+				// LOG(INFO) << "Draw Cable";
+				id_buffer->set(100);
+				bindCBuffer(id_buffer);
+				return RIGID;
+			}
+		}
 
 		return DEFAULT;
 	}
 	virtual void endDraw(const DrawInfo & info) override {
-
-		//if (ao_inject.ps_hash == info.pixel_shader)
-		//{
-		//	copyTarget("ao", info.outputs[0]);
-		//}
 
 		if (final_shader.count(info.pixel_shader)) {
 			// Draw the final image (right before the image is distorted)

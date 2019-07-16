@@ -12,7 +12,7 @@ cbuffer disparity_correction {
 	float disp_b = 0.0; // Correct the disparity disp_a * (z + disp_b)
 };
 
-void main(in float4 p: SV_POSITION, in float2 t : TEX_COORD, out float2 flow : SV_Target0, out float disparity : SV_Target1, out float occlusion: SV_Target2, out float depth:SV_Target3)
+void main(in float4 p: SV_POSITION, in float2 t : TEX_COORD, out float2 flow : SV_Target0, out float disparity : SV_Target1, out float occlusion: SV_Target2)
 {
 	//float4 f = T.Sample(S, t);
 	uint W, H;
@@ -25,8 +25,6 @@ void main(in float4 p: SV_POSITION, in float2 t : TEX_COORD, out float2 flow : S
 	// Get the prior disparity
 	float DD = prev_disp.Sample(S, float2((f.x + 1) * 0.5, (1 - f.y) * 0.5));
 	disparity = disp_a * (f.w + disp_b);
-	
-	depth = f.z;	// ground truth depth
 
 	float prev_disparity = disp_a * (f.z + disp_b);
 	occlusion = 1. / prev_disparity - 1. / DD;
