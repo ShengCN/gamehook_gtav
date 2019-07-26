@@ -112,14 +112,14 @@ struct GTA5 : public GameController {
 		return false;
 	}
 	virtual std::vector<ProvidedTarget> providedTargets() const override {
-		return { {"albedo"}, {"normal"},{"final"}, {"water"}, { "prev_disp", TargetType::R32_FLOAT, true }};
+		return { {"albedo"}, {"normal"},{"final"}, {"water"}, { "prev_disp", TargetType::R32_FLOAT, true },{"shadows"}};
 	}
 	virtual std::vector<ProvidedTarget> providedCustomTargets() const {
 		// Write the disparity into a custom render target (this name needs to match the injection shader buffer name!)
 		return { { "flow_disp", TargetType::R32G32B32A32_FLOAT, true},
-				 { "flow", TargetType::R32G32_FLOAT},
+				 { "flow", TargetType::R32G32_FLOAT, true},
 				 { "disparity", TargetType::R32_FLOAT },
-				 { "occlusion", TargetType::R32_FLOAT },
+				 { "occlusion", TargetType::R32_FLOAT, true},
 				 { "semantic_out", TargetType::R32_UINT },
 				 { "cable_disparity", TargetType::R32_FLOAT},
 				 { "cable", TargetType::R32_UINT}
@@ -224,6 +224,11 @@ struct GTA5 : public GameController {
 
 		// #find_final_shader
 		if (shader->type() == Shader::PIXEL) {
+			//if (containsCBuffer(shader, "cascadeshadows_rendering_locals") && containsCBuffer(shader, "cascadeshadows_recieving_locals")) {
+			//	LOG(INFO) << "Find the shadow map";
+			//	shadows.ps_hash = shader->hash();
+			//}
+			
 			if (containsCBuffer(shader, "trees") || containsCBuffer(shader, "grass"))
 			{
 				// LOG(INFO) << "Find some trees";
@@ -314,10 +319,12 @@ struct GTA5 : public GameController {
 	uint32_t oid = 1, base_id = 1;
 
 	ShaderHash water_hash = ShaderHash("cb8085c2:13bf714f:153d91b3:548e1f2e");
+	ShaderHash shadow_hash = ShaderHash("048a6057:7231abf6:84ae054e:c05b092a");
 	std::unordered_set<ShaderHash> ao_set;
 	// deferred shading injection, albedo, normal
 	Texture_Injection main_pass_injection = Texture_Injection(); 
 	Texture_Injection water_inject = Texture_Injection(water_hash);
+	Texture_Injection shadows = Texture_Injection(shadow_hash);
 
 	// #cbuffer
 	std::shared_ptr<CBuffer> id_buffer, cable_buffer, prev_buffer, prev_wheel_buffer, prev_rage_bonemtx, disparity_correction;
@@ -341,6 +348,9 @@ struct GTA5 : public GameController {
 
 		water_inject = Texture_Injection(water_hash);
 		water_inject.output = std::vector<RenderTargetView>(1);
+
+		shadows = Texture_Injection(shadow_hash);
+		shadows.output = std::vector<RenderTargetView>(1);
 
 		// cbuffer creation
 		if (!id_buffer) id_buffer = createCBuffer("IDBuffer", sizeof(int));
@@ -383,9 +393,40 @@ struct GTA5 : public GameController {
 	}
 
 	void set_semantic_buffer(const DrawInfo& info) {
+		//if (tree_hash_sets.count(info.pixel_shader))
+		//{
+		//	id_buffer->set(256);
+		//	bindCBuffer(id_buffer);
+		//}
+		//else if (vehicle_hash_sets.count(info.pixel_shader))
+		//{
+		//	id_buffer->set(64);
+		//	bindCBuffer(id_buffer);
+		//}
+		//else if (terrain_hash_sets.count(info.pixel_shader))
+		//{
+		//	id_buffer->set(32);
+		//	bindCBuffer(id_buffer);
+		//}
+		//else if (road_hash_sets.count(info.pixel_shader))
+		//{
+		//	id_buffer->set(16);
+		//	bindCBuffer(id_buffer);
+		//}
+		//else
+		//{
+		//	id_buffer->set(info.texture_id);
+		//	bindCBuffer(id_buffer);
+		//}
+
 		if (tree_hash_sets.count(info.pixel_shader))
 		{
 			id_buffer->set(256);
+			bindCBuffer(id_buffer);
+		}
+		else if (ped_hash_sets.count(info.pixel_shader))
+		{
+			id_buffer->set(info.texture_id);
 			bindCBuffer(id_buffer);
 		}
 		else if (vehicle_hash_sets.count(info.pixel_shader))
@@ -471,18 +512,24 @@ struct GTA5 : public GameController {
 		{
 			water_inject.output[0] = info.outputs[0];
 			water_inject.cur_rendering_state = rendering_state::ready_for_capture;
-		}
-		else if (water_inject.cur_rendering_state == rendering_state::ready_for_capture)
+		}else if (water_inject.cur_rendering_state == rendering_state::ready_for_capture)
 		{
 			copyTarget("water", water_inject.output[0]);
 			water_inject.cur_rendering_state = rendering_state::second_pass;
 		}
 
+		if (info.pixel_shader == shadows.ps_hash) {
+			// LOG(INFO) << "Dump shadow";
+			shadows.output[0] = info.outputs[0];
+			shadows.cur_rendering_state = rendering_state::ready_for_capture;
+		} else if (shadows.cur_rendering_state == rendering_state::ready_for_capture) {
+			copyTarget("shadows", shadows.output[0]);
+			shadows.cur_rendering_state = rendering_state::second_pass;
+		}
 
 		if ((currentRecordingType() != NONE) && info.outputs.size() && info.outputs[0].W == defaultWidth() && info.outputs[0].H == defaultHeight()) {
+			
 			if (cable_sets.count(info.pixel_shader)) {
-				// LOG(INFO) << "Draw Cable";
-				id_buffer->set(100);
 				bindCBuffer(id_buffer);
 				return RIGID;
 			}
@@ -514,29 +561,49 @@ struct GTA5 : public GameController {
 			frame_timestamp = time();
 			if ((frame_timestamp - last_recorded_frame) * fps >= 1) {
 				bool is_need_wait = true;
-				Vector3 position;
-				{
-					std::lock_guard<std::mutex> lock(get_cam);
+				//Vector3 position;
+				//{
+				//	// std::lock_guard<std::mutex> lock(get_cam);
+				//	
+				//	if (CAM::IS_GAMEPLAY_CAM_RENDERING()) {
+				//		position = CAM::GET_GAMEPLAY_CAM_COORD();
+				//	}
+				//	else {
+				//		Any cur_camera = CAM::GET_RENDERING_CAM();
+				//		// camera parameters
+				//		position = CAM::GET_CAM_COORD(cur_camera);
+				//	}
+				//}
 
-					if (CAM::IS_GAMEPLAY_CAM_RENDERING()) {
-						position = CAM::GET_GAMEPLAY_CAM_COORD();
+				//float diff_x = gv->last_pos.x - position.x;
+				//float diff_y = gv->last_pos.y - position.y;
+				//float diff_z = gv->last_pos.z - position.z;
+
+				//float diff = std::sqrt(diff_x * diff_x + diff_y * diff_y + diff_z * diff_z);
+				//gv->last_pos = position;
+				int is_random_pos = 1;
+				std::ifstream input("trigger.ini");
+				if (input.is_open()) {
+					input >> is_random_pos;
+					input.close();
+				}
+				else {
+					LOG(INFO) << "Cannot open trigger";
+				}
+
+				if (is_random_pos) {
+					std::ofstream output("trigger.ini");
+					if (output.is_open()) {
+						output << 0;
+						output.close();
 					}
 					else {
-						Any cur_camera = CAM::GET_RENDERING_CAM();
-						// camera parameters
-						position = CAM::GET_CAM_COORD(cur_camera);
+						LOG(INFO) << "Cannot open trigger";
 					}
 				}
 
-				float diff_x = gv->last_pos.x - position.x;
-				float diff_y = gv->last_pos.y - position.y;
-				float diff_z = gv->last_pos.z - position.z;
-
-				float diff = std::sqrt(diff_x * diff_x + diff_y * diff_y + diff_z * diff_z);
-				gv->last_pos = position;
-
-				if (diff > 50.0f) {
-					LOG(INFO) << diff << "Distances between frames are too large, wait to loading...";
+				if (is_random_pos) {
+					LOG(INFO) << "Distances between frames are too large, wait to loading...";
 					gv->time_counter = 0;
 				}
 				else if (gv->time_counter < gv->wait_counter) {

@@ -10,5 +10,5 @@ void main(in float4 pos: SV_Position, in float4 prev_pos : PREV_POSITION, out fl
 	// semantic_out = 255;
 
 	flow_disp.xyz = prev_pos.xyz / prev_pos.w;
-	flow_disp.w = 1.0/log(pos.w + 1.0);	// for depth
+	flow_disp.w = 1.0 / pos.w;	// for depth
 }
